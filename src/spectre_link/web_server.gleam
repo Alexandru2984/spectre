@@ -39,6 +39,7 @@ fn handle_request(
   let path = request.path_segments(req)
   case req.method, path {
     Get, [] -> serve_dashboard()
+    Get, ["static", "dashboard.js"] -> serve_dashboard_js()
     Get, ["api", "messages"] -> list_messages(registry)
     Post, ["api", "messages"] -> create_message(req, registry)
     Get, ["api", "nodes"] -> list_nodes()
@@ -49,28 +50,26 @@ fn handle_request(
 fn json_resp(status: Int, body: String) -> Response(ResponseData) {
   response.new(status)
   |> response.set_header("content-type", "application/json")
-  |> response.set_header("access-control-allow-origin", "*")
+  |> response.set_header("cache-control", "no-store")
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
-  |> add_security_headers()
 }
 
 fn html_resp(body: String) -> Response(ResponseData) {
   response.new(200)
   |> response.set_header("content-type", "text/html; charset=utf-8")
+  |> response.set_header("cache-control", "no-store")
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
-  |> add_security_headers()
 }
 
-fn add_security_headers(resp: Response(ResponseData)) -> Response(ResponseData) {
-  resp
-  |> response.set_header("x-frame-options", "DENY")
-  |> response.set_header("x-content-type-options", "nosniff")
-  |> response.set_header("referrer-policy", "no-referrer")
-  |> response.set_header("permissions-policy", "camera=(), microphone=()")
-  |> response.set_header(
-    "content-security-policy",
-    "default-src 'self' 'unsafe-inline'; connect-src 'self'",
-  )
+fn js_resp(body: String) -> Response(ResponseData) {
+  response.new(200)
+  |> response.set_header("content-type", "text/javascript; charset=utf-8")
+  |> response.set_header("cache-control", "max-age=3600")
+  |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
+}
+
+fn serve_dashboard_js() -> Response(ResponseData) {
+  js_resp(dashboard_js())
 }
 
 fn not_found() -> Response(ResponseData) {
@@ -177,62 +176,246 @@ fn dashboard_html() -> String {
 <html lang=\"en\">
 <head>
 <meta charset=\"UTF-8\">
-<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-<title>Spectre-Link Dashboard</title>
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, viewport-fit=cover\">
+<title>Spectre-Link</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0a0a1a; color: #e0e0ff; font-family: 'Courier New', monospace; overflow: hidden; }
-  #canvas { position: fixed; top: 0; left: 0; z-index: 0; }
-  #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; display: flex; pointer-events: none; }
-  #sidebar { width: 260px; background: rgba(10,10,30,0.85); border-right: 1px solid #2a2a6a; padding: 20px; pointer-events: all; overflow-y: auto; }
-  h1 { color: #8080ff; font-size: 1.3em; margin-bottom: 16px; text-shadow: 0 0 10px #4040ff; }
-  h2 { color: #6060cc; font-size: 1em; margin-bottom: 10px; }
-  .node-item { background: rgba(40,40,100,0.5); border: 1px solid #3030a0; padding: 8px 12px; margin-bottom: 6px; border-radius: 4px; font-size: 0.75em; word-break: break-all; }
-  .node-self { border-color: #8080ff; color: #b0b0ff; }
-  #form-area { position: fixed; bottom: 20px; left: 280px; right: 20px; background: rgba(10,10,30,0.9); border: 1px solid #3030a0; border-radius: 8px; padding: 20px; pointer-events: all; }
-  .form-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  input[type=text] { flex: 1; min-width: 200px; background: rgba(20,20,60,0.8); border: 1px solid #4040a0; color: #e0e0ff; padding: 10px; border-radius: 4px; font-family: inherit; font-size: 0.9em; }
-  input[type=text]::placeholder { color: #5050a0; }
-  input[type=range] { width: 160px; accent-color: #8080ff; }
-  .ttl-label { color: #8080cc; font-size: 0.8em; min-width: 90px; }
-  button { background: linear-gradient(135deg, #4040c0, #8040ff); border: none; color: #fff; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 0.9em; transition: opacity 0.2s; }
-  button:hover { opacity: 0.85; }
-  #status { font-size: 0.75em; color: #6060cc; margin-top: 8px; }
-  #msg-count { color: #8080ff; font-size: 0.8em; margin-top: 8px; }
+:root {
+  --sw: 260px;
+  --accent: #8080ff;
+  --bg: #0a0a1a;
+  --border: #2a2a6a;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: #e0e0ff;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  height: 100dvh;
+}
+#canvas {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  touch-action: none;
+}
+/* Toggle button — hidden on desktop */
+#toggle-btn {
+  display: none;
+  position: fixed; top: 12px; left: 12px;
+  z-index: 200;
+  background: rgba(10,10,30,0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #e0e0ff;
+  padding: 8px 12px;
+  font-size: 1rem;
+  cursor: pointer;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+}
+#msg-badge {
+  background: var(--accent);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 0.72em;
+  min-width: 20px;
+  text-align: center;
+}
+/* Backdrop */
+#backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 150;
+  touch-action: none;
+}
+#backdrop.show { display: block; }
+/* Sidebar */
+#sidebar {
+  position: fixed; top: 0; left: 0;
+  width: var(--sw); height: 100%;
+  background: rgba(10,10,30,0.92);
+  border-right: 1px solid var(--border);
+  padding: 20px;
+  z-index: 100;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#sidebar-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+#close-btn {
+  display: none;
+  background: none; border: none;
+  color: #6060cc; cursor: pointer;
+  font-size: 1.2rem;
+  padding: 4px 8px;
+  min-height: 44px; min-width: 44px;
+  border-radius: 4px;
+}
+h1 { color: var(--accent); font-size: 1.3em; text-shadow: 0 0 10px #4040ff; }
+h2 { color: #6060cc; font-size: 1em; margin-bottom: 10px; }
+.node-item {
+  background: rgba(40,40,100,0.5);
+  border: 1px solid #3030a0;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  font-size: 0.75em;
+  word-break: break-all;
+}
+.node-self { border-color: var(--accent); color: #b0b0ff; }
+#msg-count { color: var(--accent); font-size: 0.8em; margin-top: 8px; }
+/* Form */
+#form-area {
+  position: fixed; bottom: 0;
+  left: calc(var(--sw) + 20px); right: 20px;
+  background: rgba(10,10,30,0.92);
+  border: 1px solid #3030a0;
+  border-radius: 8px 8px 0 0;
+  padding: 16px 20px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 100;
+}
+.form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ttl-row { display: flex; align-items: center; gap: 8px; }
+input[type=text] {
+  flex: 1; min-width: 180px;
+  background: rgba(20,20,60,0.8);
+  border: 1px solid #4040a0;
+  color: #e0e0ff;
+  padding: 10px; border-radius: 4px;
+  font-family: inherit; font-size: 0.9em;
+  min-height: 44px;
+}
+input[type=text]::placeholder { color: #5050a0; }
+input[type=range] { width: 140px; accent-color: var(--accent); }
+.ttl-label { color: #8080cc; font-size: 0.8em; white-space: nowrap; }
+button {
+  background: linear-gradient(135deg, #4040c0, #8040ff);
+  border: none; color: #fff;
+  padding: 10px 20px; border-radius: 4px;
+  cursor: pointer; font-family: inherit; font-size: 0.9em;
+  min-height: 44px;
+  transition: opacity 0.2s;
+}
+button:hover, button:active { opacity: 0.85; }
+#status { font-size: 0.75em; color: #6060cc; margin-top: 6px; min-height: 1em; }
+
+/* ─── Mobile (≤768px) ─── */
+@media (max-width: 768px) {
+  #toggle-btn { display: flex; }
+  #close-btn { display: block; }
+  #sidebar {
+    top: auto; bottom: 0;
+    left: 0; right: 0;
+    width: 100%; height: auto;
+    max-height: 60dvh;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    transform: translateY(105%);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    z-index: 160;
+  }
+  #sidebar.open { transform: translateY(0); }
+  #form-area {
+    left: 0; right: 0;
+    border-radius: 0;
+    padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    border-left: none; border-right: none; border-bottom: none;
+  }
+  .form-row { flex-direction: column; gap: 8px; }
+  input[type=text] { width: 100%; min-width: unset; }
+  .ttl-row { width: 100%; justify-content: space-between; }
+  input[type=range] { flex: 1; max-width: 200px; }
+  button { width: 100%; padding: 12px; }
+}
 </style>
 </head>
 <body>
 <canvas id=\"canvas\"></canvas>
-<div id=\"ui\">
-  <div id=\"sidebar\">
+<button id=\"toggle-btn\" aria-label=\"Toggle nodes panel\" aria-expanded=\"false\">
+  👻 <span id=\"msg-badge\">0</span>
+</button>
+<div id=\"backdrop\"></div>
+<aside id=\"sidebar\">
+  <div id=\"sidebar-hdr\">
     <h1>👻 Spectre-Link</h1>
-    <h2>Connected Nodes</h2>
-    <div id=\"nodes-list\"><div class=\"node-item\">Loading...</div></div>
-    <div id=\"msg-count\"></div>
+    <button id=\"close-btn\" aria-label=\"Close nodes panel\">✕</button>
   </div>
-</div>
+  <h2>Connected Nodes</h2>
+  <div id=\"nodes-list\"><div class=\"node-item\">Loading...</div></div>
+  <div id=\"msg-count\"></div>
+</aside>
 <div id=\"form-area\">
   <div class=\"form-row\">
-    <input type=\"text\" id=\"content-input\" placeholder=\"Enter ephemeral message...\" maxlength=\"200\">
-    <label class=\"ttl-label\">TTL: <span id=\"ttl-display\">30s</span></label>
-    <input type=\"range\" id=\"ttl-input\" min=\"3000\" max=\"120000\" step=\"1000\" value=\"30000\">
-    <button onclick=\"sendMessage()\">Send 👻</button>
+    <input type=\"text\" id=\"content-input\" placeholder=\"Enter ephemeral message...\" maxlength=\"500\" autocomplete=\"off\">
+    <div class=\"ttl-row\">
+      <span class=\"ttl-label\">TTL: <span id=\"ttl-display\">30s</span></span>
+      <input type=\"range\" id=\"ttl-input\" min=\"3000\" max=\"300000\" step=\"1000\" value=\"30000\">
+    </div>
+    <button type=\"button\" id=\"send-btn\">Send 👻</button>
   </div>
   <div id=\"status\"></div>
 </div>
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let width, height;
-function resize() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; }
-resize(); window.addEventListener('resize', resize);
+<script src=\"/static/dashboard.js\"></script>
+</body>
+</html>"
+}
 
+fn dashboard_js() -> String {
+  "const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let width, height, formH = 130;
+
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+  const f = document.getElementById('form-area');
+  if (f) formH = f.offsetHeight + 16;
+}
+resize();
+window.addEventListener('resize', () => { resize(); });
+
+// Sidebar toggle
+const sidebar = document.getElementById('sidebar');
+const backdrop = document.getElementById('backdrop');
+const toggleBtn = document.getElementById('toggle-btn');
+const closeBtn = document.getElementById('close-btn');
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  backdrop.classList.add('show');
+  toggleBtn.setAttribute('aria-expanded', 'true');
+}
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  backdrop.classList.remove('show');
+  toggleBtn.setAttribute('aria-expanded', 'false');
+}
+toggleBtn.addEventListener('click', () => sidebar.classList.contains('open') ? closeSidebar() : openSidebar());
+closeBtn.addEventListener('click', closeSidebar);
+backdrop.addEventListener('click', closeSidebar);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+
+// Canvas nodes
 class MsgNode {
   constructor(m) {
     this.id = m.id; this.content = m.content;
     this.ttl_ms = m.ttl_ms; this.created_at = m.created_at;
-    this.x = Math.random() * (width - 320) + 270;
-    this.y = Math.random() * (height - 200) + 20;
+    const mobile = window.innerWidth <= 768;
+    const lx = mobile ? 20 : 280;
+    this.x = lx + Math.random() * (width - lx - 40);
+    this.y = 20 + Math.random() * (height - formH - 40);
     this.vx = (Math.random() - 0.5) * 1.2;
     this.vy = (Math.random() - 0.5) * 1.2;
     this.r = 38 + Math.random() * 18;
@@ -242,25 +425,35 @@ class MsgNode {
   frac() { return Math.max(0, 1 - (Date.now() - this.created_at) / this.ttl_ms); }
   update() {
     this.x += this.vx; this.y += this.vy; this.phase += 0.03;
-    if (this.x - this.r < 270) { this.x = 270 + this.r; this.vx = Math.abs(this.vx); }
-    if (this.x + this.r > width - 10) { this.x = width - 10 - this.r; this.vx = -Math.abs(this.vx); }
-    if (this.y - this.r < 10) { this.y = 10 + this.r; this.vy = Math.abs(this.vy); }
-    if (this.y + this.r > height - 180) { this.y = height - 180 - this.r; this.vy = -Math.abs(this.vy); }
+    const mobile = window.innerWidth <= 768;
+    const lb = mobile ? this.r + 4 : 270 + this.r;
+    if (this.x - this.r < lb) { this.x = lb + this.r; this.vx = Math.abs(this.vx); }
+    if (this.x + this.r > width - 8) { this.x = width - 8 - this.r; this.vx = -Math.abs(this.vx); }
+    if (this.y - this.r < 8) { this.y = 8 + this.r; this.vy = Math.abs(this.vy); }
+    if (this.y + this.r > height - formH) { this.y = height - formH - this.r; this.vy = -Math.abs(this.vy); }
   }
   draw() {
-    const f = this.frac(), pulse = 0.7 + 0.3 * Math.sin(this.phase);
-    ctx.save(); ctx.globalAlpha = f * 0.9;
+    const f = this.frac();
+    const pulse = 0.7 + 0.3 * Math.sin(this.phase);
+    ctx.save();
+    ctx.globalAlpha = f * 0.9;
     const g = ctx.createRadialGradient(this.x, this.y, this.r * 0.2, this.x, this.y, this.r * 1.5);
-    g.addColorStop(0, `hsla(${this.hue},80%,70%,${0.4*pulse})`); g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(this.x, this.y, this.r * 1.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+    g.addColorStop(0, `hsla(${this.hue},80%,70%,${0.4 * pulse})`);
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r * 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
     ctx.fillStyle = `hsla(${this.hue},60%,15%,0.85)`; ctx.fill();
-    ctx.strokeStyle = `hsla(${this.hue},80%,60%,${0.8*pulse})`; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = `hsla(${this.hue},90%,80%,1)`; ctx.font = 'bold 10px Courier New'; ctx.textAlign = 'center';
-    ctx.fillText(this.content.length > 14 ? this.content.slice(0,14)+'\\u2026' : this.content, this.x, this.y - 6);
+    ctx.strokeStyle = `hsla(${this.hue},80%,60%,${0.8 * pulse})`; ctx.lineWidth = 2; ctx.stroke();
+    const fs = window.innerWidth <= 768 ? 12 : 10;
+    ctx.fillStyle = `hsla(${this.hue},90%,80%,1)`;
+    ctx.font = `bold ${fs}px Courier New`; ctx.textAlign = 'center';
+    const lbl = this.content.length > 14 ? this.content.slice(0, 14) + '\\u2026' : this.content;
+    ctx.fillText(lbl, this.x, this.y - 6);
     const sl = Math.ceil(this.ttl_ms * f / 1000);
     ctx.fillStyle = f < 0.25 ? '#ff6060' : `hsla(${this.hue},70%,65%,1)`;
-    ctx.font = '9px Courier New'; ctx.fillText('\\u23f1 ' + sl + 's', this.x, this.y + 10);
+    ctx.font = `${fs - 1}px Courier New`;
+    ctx.fillText('\\u23f1 ' + sl + 's', this.x, this.y + 10);
     ctx.restore();
   }
 }
@@ -276,8 +469,8 @@ function updateNodes(msgs) {
   requestAnimationFrame(animate);
   ctx.clearRect(0, 0, width, height);
   ctx.strokeStyle = 'rgba(40,40,120,0.12)'; ctx.lineWidth = 1;
-  for (let x = 0; x < width; x += 60) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height); ctx.stroke(); }
-  for (let y = 0; y < height; y += 60) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width,y); ctx.stroke(); }
+  for (let x = 0; x < width; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
+  for (let y = 0; y < height; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
   for (const n of Object.values(nodes)) { n.update(); n.draw(); }
 })();
 
@@ -294,34 +487,40 @@ async function refresh() {
       d.textContent = (i === 0 ? '\\u2605 ' : '\\u25cb ') + n;
       nl.appendChild(d);
     });
-    document.getElementById('msg-count').textContent = msgs.length + ' active message' + (msgs.length !== 1 ? 's' : '');
+    const c = msgs.length;
+    document.getElementById('msg-count').textContent = c + ' active message' + (c !== 1 ? 's' : '');
+    document.getElementById('msg-badge').textContent = c;
   } catch(e) {}
 }
-refresh(); setInterval(refresh, 2000);
+refresh();
+setInterval(refresh, 2000);
 
 document.getElementById('ttl-input').addEventListener('input', function() {
-  document.getElementById('ttl-display').textContent = (parseInt(this.value)/1000) + 's';
+  document.getElementById('ttl-display').textContent = (parseInt(this.value) / 1000) + 's';
 });
 
 async function sendMessage() {
-  const c = document.getElementById('content-input').value.trim();
+  const inp = document.getElementById('content-input');
+  const c = inp.value.trim();
   if (!c) { setStatus('Enter a message first', true); return; }
   const ttl = parseInt(document.getElementById('ttl-input').value);
   setStatus('Sending\\u2026', false);
   try {
     const r = await fetch('/api/messages', {
-      method: 'POST', headers: {'content-type':'application/json'},
+      method: 'POST', headers: {'content-type': 'application/json'},
       body: JSON.stringify({content: c, ttl})
     });
     const d = await r.json();
-    if (r.ok) { setStatus('\\u2713 Sent: ' + d.id, false); document.getElementById('content-input').value = ''; refresh(); }
-    else setStatus('Error: ' + (d.error||'unknown'), true);
+    if (r.ok) { setStatus('\\u2713 ' + d.id, false); inp.value = ''; refresh(); }
+    else setStatus('Error: ' + (d.error || 'unknown'), true);
   } catch(e) { setStatus('Network error', true); }
 }
 
-document.getElementById('content-input').addEventListener('keydown', e => { if (e.key==='Enter') sendMessage(); });
-function setStatus(m, err) { const el = document.getElementById('status'); el.textContent = m; el.style.color = err ? '#ff6060' : '#8080ff'; }
-</script>
-</body>
-</html>"
+document.getElementById('send-btn').addEventListener('click', sendMessage);
+document.getElementById('content-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+function setStatus(m, err) {
+  const el = document.getElementById('status');
+  el.textContent = m;
+  el.style.color = err ? '#ff6060' : '#8080ff';
+}"
 }

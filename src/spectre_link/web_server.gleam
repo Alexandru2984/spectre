@@ -51,12 +51,26 @@ fn json_resp(status: Int, body: String) -> Response(ResponseData) {
   |> response.set_header("content-type", "application/json")
   |> response.set_header("access-control-allow-origin", "*")
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
+  |> add_security_headers()
 }
 
 fn html_resp(body: String) -> Response(ResponseData) {
   response.new(200)
   |> response.set_header("content-type", "text/html; charset=utf-8")
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
+  |> add_security_headers()
+}
+
+fn add_security_headers(resp: Response(ResponseData)) -> Response(ResponseData) {
+  resp
+  |> response.set_header("x-frame-options", "DENY")
+  |> response.set_header("x-content-type-options", "nosniff")
+  |> response.set_header("referrer-policy", "no-referrer")
+  |> response.set_header("permissions-policy", "camera=(), microphone=()")
+  |> response.set_header(
+    "content-security-policy",
+    "default-src 'self' 'unsafe-inline'; connect-src 'self'",
+  )
 }
 
 fn not_found() -> Response(ResponseData) {
@@ -84,7 +98,7 @@ fn create_message(
   req: Request(Connection),
   registry: process.Subject(RegistryMsg),
 ) -> Response(ResponseData) {
-  case mist.read_body(req, 1_000_000) {
+  case mist.read_body(req, 10_240) {
     Error(_) -> bad_request("failed to read body")
     Ok(req_with_body) -> {
       case bit_array.to_string(req_with_body.body) {
@@ -93,28 +107,33 @@ fn create_message(
           case parse_message_json(<<body_str:utf8>>) {
             Error(_) -> bad_request("invalid json — expected {\"content\":\"...\",\"ttl\":N}")
             Ok(#(content, ttl)) -> {
-              let id = generate_id()
-              let node_str = atom.to_string(mesh_discovery.node_name())
-              let reply =
-                process.call(registry, waiting: 5000, sending: fn(reply) {
-                  node_registry.AddMessage(
-                    id: id,
-                    content: content,
-                    from_node: node_str,
-                    ttl_ms: ttl,
-                    reply_to: reply,
-                  )
-                })
-              case reply {
-                Ok(msg_id) ->
-                  json_resp(
-                    201,
-                    j.obj([
-                      #("id", j.str(msg_id)),
-                      #("status", j.str("created")),
-                    ]),
-                  )
-                Error(e) -> bad_request(e)
+              case string.length(content) > 500 {
+                True -> bad_request("content too long (max 500 chars)")
+                False -> {
+                  let id = generate_id()
+                  let node_str = atom.to_string(mesh_discovery.node_name())
+                  let reply =
+                    process.call(registry, waiting: 5000, sending: fn(reply) {
+                      node_registry.AddMessage(
+                        id: id,
+                        content: content,
+                        from_node: node_str,
+                        ttl_ms: ttl,
+                        reply_to: reply,
+                      )
+                    })
+                  case reply {
+                    Ok(msg_id) ->
+                      json_resp(
+                        201,
+                        j.obj([
+                          #("id", j.str(msg_id)),
+                          #("status", j.str("created")),
+                        ]),
+                      )
+                    Error(e) -> bad_request(e)
+                  }
+                }
               }
             }
           }

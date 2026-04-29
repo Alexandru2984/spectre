@@ -1,5 +1,6 @@
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
+import gleam/int
 import gleam/list
 import gleam/otp/actor
 import spectre_link/message_actor.{type MessageInfo, type Msg as ActorMsg}
@@ -50,26 +51,42 @@ fn is_alive(subject: Subject(ActorMsg)) -> Bool {
 fn handle_msg(state: State, msg: RegistryMsg) -> actor.Next(State, RegistryMsg) {
   case msg {
     AddMessage(id, content, from_node, ttl_ms, reply_to) -> {
-      let info =
-        message_actor.MessageInfo(
-          id: id,
-          content: content,
-          from_node: from_node,
-          ttl_ms: ttl_ms,
-          created_at: now_ms(),
-        )
-      case message_actor.start(info) {
-        Ok(subject) -> {
-          let _ = process.send_after(subject, ttl_ms, message_actor.Expire)
-          let entry = Entry(subject: subject, info: info)
-          let new_state =
-            State(messages: dict.insert(state.messages, id, entry))
-          process.send(reply_to, Ok(id))
-          actor.continue(new_state)
-        }
-        Error(_) -> {
-          process.send(reply_to, Error("Failed to start actor"))
+      let live_count =
+        state.messages
+        |> dict.values()
+        |> list.filter(fn(e) { is_alive(e.subject) })
+        |> list.length()
+      case live_count >= 500 {
+        True -> {
+          process.send(reply_to, Error("Server at capacity (max 500 messages)"))
           actor.continue(state)
+        }
+        False -> {
+          // Clamp TTL: min 1s, max 5min
+          let safe_ttl = int.max(1000, int.min(ttl_ms, 300_000))
+          let info =
+            message_actor.MessageInfo(
+              id: id,
+              content: content,
+              from_node: from_node,
+              ttl_ms: safe_ttl,
+              created_at: now_ms(),
+            )
+          case message_actor.start(info) {
+            Ok(subject) -> {
+              let _ =
+                process.send_after(subject, safe_ttl, message_actor.Expire)
+              let entry = Entry(subject: subject, info: info)
+              let new_state =
+                State(messages: dict.insert(state.messages, id, entry))
+              process.send(reply_to, Ok(id))
+              actor.continue(new_state)
+            }
+            Error(_) -> {
+              process.send(reply_to, Error("Failed to start actor"))
+              actor.continue(state)
+            }
+          }
         }
       }
     }

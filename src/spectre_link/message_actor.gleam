@@ -1,3 +1,4 @@
+import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/otp/actor
 
@@ -5,7 +6,9 @@ pub type MessageInfo {
   MessageInfo(
     id: String,
     content: String,
-    from_node: String,
+    room: String,
+    kind: String,
+    reactions: Dict(String, Int),
     ttl_ms: Int,
     created_at: Int,
   )

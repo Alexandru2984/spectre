@@ -14,7 +14,7 @@ pub fn unicode_and_escaping_round_trip_test() {
     json.object([#("content", json.string(text)), #("ttl", json.int(30_000))])
     |> json.to_string()
   validation.parse_message(body)
-  |> should.equal(Ok(validation.NewMessage(text, 30_000)))
+  |> should.equal(Ok(validation.NewMessage(text, 30_000, "lobby", "thought")))
   json_utils.str(text) |> json.parse(decode.string) |> should.equal(Ok(text))
 }
 
@@ -53,13 +53,24 @@ pub fn bounds_and_control_characters_test() {
 pub fn independent_registry_expiry_test() {
   let assert Ok(registry) = node_registry.start()
   process.call(registry, 1000, fn(reply) {
-    node_registry.AddMessage("unit-expiry", "temporary", "local", 1000, reply)
+    node_registry.AddMessage(
+      "unit-expiry",
+      "temporary",
+      "lobby",
+      "thought",
+      1000,
+      "hash",
+      reply,
+    )
   })
-  |> should.equal(Ok("unit-expiry"))
+  |> result.is_ok()
+  |> should.be_true()
   process.sleep(1100)
   process.call(registry, 1000, fn(reply) { node_registry.CountMessages(reply) })
   |> should.equal(0)
-  process.call(registry, 1000, fn(reply) { node_registry.ListMessages(reply) })
+  process.call(registry, 1000, fn(reply) {
+    node_registry.ListMessages("lobby", reply)
+  })
   |> should.equal([])
 }
 

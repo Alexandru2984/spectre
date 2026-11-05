@@ -1,7 +1,8 @@
 import gleam/bit_array
 import gleam/bytes_tree
+import gleam/dict
 import gleam/erlang/process
-import gleam/http.{Get, Head, Post}
+import gleam/http.{Delete, Get, Head, Post}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
@@ -31,14 +32,13 @@ pub fn start(
       }
     }
   }
-
   handler
   |> mist.new()
   |> mist.port(port)
   |> mist.bind("127.0.0.1")
   |> mist.start()
   |> result.map(fn(_) { Nil })
-  |> result.map_error(fn(e) { string.inspect(e) })
+  |> result.map_error(string.inspect)
 }
 
 fn handle_request(
@@ -48,9 +48,9 @@ fn handle_request(
 ) -> Response(ResponseData) {
   let path = request.path_segments(req)
   case req.method, path {
-    Get, [] | Head, [] -> serve_dashboard()
+    Get, [] | Head, [] -> html_resp(dashboard_html())
     Get, ["static", "dashboard.js"] | Head, ["static", "dashboard.js"] ->
-      serve_dashboard_js()
+      js_resp(dashboard_js())
     Get, ["healthz"] | Head, ["healthz"] ->
       json_resp(200, "{\"status\":\"ok\"}")
     _, ["api", ..] -> {
@@ -58,44 +58,123 @@ fn handle_request(
         Get | Head -> rate_limit.Read
         _ -> rate_limit.Write
       }
+      // Only the loopback reverse proxy may supply X-Real-IP. The checked-in
+      // nginx configuration overwrites the incoming value.
       let client =
         request.get_header(req, "x-real-ip")
         |> result.unwrap("loopback")
         |> hash()
       let wait =
-        process.call(limiter, waiting: 1000, sending: fn(reply) {
+        process.call(limiter, 1000, fn(reply) {
           rate_limit.Check(client, bucket, reply)
         })
       case wait {
         0 ->
-          case req.method, path {
-            Get, ["api", "messages"] | Head, ["api", "messages"] ->
-              list_messages(registry)
-            Post, ["api", "messages"] ->
-              case allowed_write(req) {
-                True -> create_message(req, registry)
-                False ->
-                  json_resp(
-                    403,
-                    "{\"error\":\"Cross-origin writes are not allowed.\"}",
-                  )
-              }
-            Get, ["api", "nodes"] | Head, ["api", "nodes"] ->
-              json_resp(200, "[\"local\"]")
-            _, ["api", "messages"] | _, ["api", "nodes"] ->
-              json_resp(405, "{\"error\":\"Method not allowed.\"}")
-              |> response.set_header("allow", "GET, HEAD, POST")
-            _, _ -> not_found()
+          case bucket == rate_limit.Write && !allowed_write(req) {
+            True -> error_response(403, "Cross-origin writes are not allowed.")
+            False -> route_api(req, path, registry)
           }
         _ ->
-          json_resp(
-            429,
-            "{\"error\":\"Too many requests. Try again shortly.\"}",
-          )
+          error_response(429, "Too many requests. Try again shortly.")
           |> response.set_header("retry-after", int.to_string(wait))
       }
     }
-    _, _ -> not_found()
+    _, _ -> error_response(404, "Not found.")
+  }
+}
+
+fn route_api(
+  req: Request(Connection),
+  path: List(String),
+  registry: process.Subject(RegistryMsg),
+) -> Response(ResponseData) {
+  let room =
+    request.get_query(req)
+    |> result.unwrap([])
+    |> list.key_find("room")
+    |> result.unwrap("lobby")
+  case validation.validate_room(room) {
+    Error(error) -> error_response(400, error)
+    Ok(room) ->
+      case req.method, path {
+        Get, ["api", "messages"] | Head, ["api", "messages"] -> {
+          let messages = get_messages(registry, room)
+          json_resp(200, j.arr(list.map(messages, message_to_json)))
+        }
+        Get, ["api", "stats"] | Head, ["api", "stats"] -> {
+          let messages = get_messages(registry, room)
+          json_resp(
+            200,
+            j.obj([
+              #("room", j.str(room)),
+              #("active", j.num(list.length(messages))),
+              #("room_limit", "100"),
+              #("max_ttl_ms", "300000"),
+            ]),
+          )
+        }
+        Post, ["api", "messages"] ->
+          with_body(req, fn(body) { create_message(body, registry) })
+        Delete, ["api", "messages", id] -> {
+          let key = request.get_header(req, "x-burn-key") |> result.unwrap("")
+          case validation.valid_token(key) {
+            False ->
+              error_response(404, "Message or burn capability not found.")
+            True -> {
+              let burned =
+                process.call(registry, 1000, fn(reply) {
+                  node_registry.BurnMessage(id, room, hash(key), reply)
+                })
+              case burned {
+                True -> json_resp(200, "{\"status\":\"burned\"}")
+                False ->
+                  error_response(404, "Message or burn capability not found.")
+              }
+            }
+          }
+        }
+        Post, ["api", "messages", id, "reactions"] -> {
+          let client =
+            request.get_header(req, "x-spectre-client") |> result.unwrap("")
+          case validation.valid_token(client) {
+            False ->
+              error_response(400, "A valid X-Spectre-Client token is required.")
+            True ->
+              with_body(req, fn(body) {
+                case validation.parse_reaction(body) {
+                  Error(error) -> error_response(400, error)
+                  Ok(emoji) -> {
+                    let reply =
+                      process.call(registry, 1000, fn(reply) {
+                        node_registry.React(
+                          id,
+                          room,
+                          hash(client),
+                          emoji,
+                          reply,
+                        )
+                      })
+                    case reply {
+                      Ok(info) -> json_resp(200, message_to_json(info))
+                      Error(error) -> error_response(404, error)
+                    }
+                  }
+                }
+              })
+          }
+        }
+        Get, ["api", "nodes"] | Head, ["api", "nodes"] ->
+          json_resp(200, "[\"local\"]")
+        _, ["api", "messages"]
+        | _, ["api", "messages", _]
+        | _, ["api", "messages", _, "reactions"]
+        | _, ["api", "stats"]
+        | _, ["api", "nodes"]
+        ->
+          error_response(405, "Method not allowed.")
+          |> response.set_header("allow", "GET, HEAD, POST, DELETE")
+        _, _ -> error_response(404, "Not found.")
+      }
   }
 }
 
@@ -115,10 +194,9 @@ fn security_headers(res: Response(ResponseData)) -> Response(ResponseData) {
 }
 
 fn allowed_write(req: Request(Connection)) -> Bool {
-  let fetch_site =
-    request.get_header(req, "sec-fetch-site") |> result.unwrap("")
+  let site = request.get_header(req, "sec-fetch-site") |> result.unwrap("")
   let origin = request.get_header(req, "origin") |> result.unwrap("")
-  fetch_site != "cross-site"
+  site != "cross-site"
   && {
     origin == ""
     || origin == config.origin()
@@ -129,8 +207,10 @@ fn allowed_write(req: Request(Connection)) -> Bool {
 
 fn json_resp(status: Int, body: String) -> Response(ResponseData) {
   response.new(status)
-  |> response.set_header("content-type", "application/json")
+  |> response.set_header("content-type", "application/json; charset=utf-8")
   |> response.set_header("cache-control", "no-store")
+  |> response.set_header("x-robots-tag", "noindex, nofollow")
+  |> response.set_header("x-server-time", int.to_string(now_ms()))
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
 }
 
@@ -144,40 +224,26 @@ fn html_resp(body: String) -> Response(ResponseData) {
 fn js_resp(body: String) -> Response(ResponseData) {
   response.new(200)
   |> response.set_header("content-type", "text/javascript; charset=utf-8")
-  |> response.set_header("cache-control", "max-age=3600")
+  |> response.set_header("cache-control", "no-cache")
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
 }
 
-fn serve_dashboard_js() -> Response(ResponseData) {
-  js_resp(dashboard_js())
+fn error_response(status: Int, error: String) -> Response(ResponseData) {
+  json_resp(status, j.obj([#("error", j.str(error))]))
 }
 
-fn not_found() -> Response(ResponseData) {
-  json_resp(404, j.obj([#("error", j.str("not found"))]))
-}
-
-fn bad_request(msg: String) -> Response(ResponseData) {
-  json_resp(400, j.obj([#("error", j.str(msg))]))
-}
-
-fn serve_dashboard() -> Response(ResponseData) {
-  html_resp(dashboard_html())
-}
-
-fn list_messages(
+fn get_messages(
   registry: process.Subject(RegistryMsg),
-) -> Response(ResponseData) {
-  let messages =
-    process.call(registry, waiting: 5000, sending: fn(reply) {
-      node_registry.ListMessages(reply_to: reply)
-    })
-  let body = j.arr(list.map(messages, message_to_json))
-  json_resp(200, body)
+  room: String,
+) -> List(MessageInfo) {
+  process.call(registry, 1000, fn(reply) {
+    node_registry.ListMessages(room, reply)
+  })
 }
 
-fn create_message(
+fn with_body(
   req: Request(Connection),
-  registry: process.Subject(RegistryMsg),
+  next: fn(String) -> Response(ResponseData),
 ) -> Response(ResponseData) {
   let content_type =
     request.get_header(req, "content-type")
@@ -192,51 +258,63 @@ fn create_message(
     |> result.try(int.parse)
     |> result.unwrap(-1)
   case content_type, request.get_header(req, "transfer-encoding"), size {
-    _, Ok(_), _ -> bad_request("Transfer encoding is not supported.")
-    _, _, n if n < 0 ->
-      json_resp(411, "{\"error\":\"Content-Length required.\"}")
+    _, Ok(_), _ -> error_response(400, "Transfer encoding is not supported.")
+    _, _, n if n < 0 -> error_response(411, "Content-Length required.")
     _, _, n if n > 8192 ->
-      json_resp(413, "{\"error\":\"Request body exceeds 8192 bytes.\"}")
-    type_, _, _ if type_ != "application/json" ->
-      json_resp(415, "{\"error\":\"Use application/json.\"}")
+      error_response(413, "Request body exceeds 8192 bytes.")
+    t, _, _ if t != "application/json" ->
+      error_response(415, "Use application/json.")
     _, _, _ ->
       case mist.read_body(req, 8192) {
-        Error(_) -> bad_request("Unable to read request body.")
+        Error(_) -> error_response(400, "Unable to read request body.")
         Ok(body_req) ->
-          case bit_array.to_string(body_req.body) {
-            Error(_) -> bad_request("Invalid UTF-8.")
-            Ok(body) ->
-              case validation.parse_message(body) {
-                Error(error) -> bad_request(error)
-                Ok(message) -> {
-                  let id = generate_id()
-                  let reply =
-                    process.call(registry, waiting: 1000, sending: fn(reply) {
-                      node_registry.AddMessage(
-                        id:,
-                        content: message.content,
-                        from_node: "local",
-                        ttl_ms: message.ttl,
-                        reply_to: reply,
-                      )
-                    })
-                  case reply {
-                    Ok(id) ->
-                      json_resp(
-                        201,
-                        j.obj([
-                          #("id", j.str(id)),
-                          #("status", j.str("created")),
-                        ]),
-                      )
-                    Error(error) ->
-                      json_resp(503, j.obj([#("error", j.str(error))]))
-                      |> response.set_header("retry-after", "5")
-                  }
-                }
+          case bit_array.byte_size(body_req.body) == size {
+            False -> error_response(400, "Request length mismatch.")
+            True ->
+              case bit_array.to_string(body_req.body) {
+                Error(_) -> error_response(400, "Invalid UTF-8.")
+                Ok(body) -> next(body)
               }
           }
       }
+  }
+}
+
+fn create_message(
+  body: String,
+  registry: process.Subject(RegistryMsg),
+) -> Response(ResponseData) {
+  case validation.parse_message(body) {
+    Error(error) -> error_response(400, error)
+    Ok(message) -> {
+      let id = random_id()
+      let key = random_id()
+      let reply =
+        process.call(registry, 1000, fn(reply) {
+          node_registry.AddMessage(
+            id:,
+            content: message.content,
+            room: message.room,
+            kind: message.kind,
+            ttl_ms: message.ttl,
+            burn_hash: hash(key),
+            reply_to: reply,
+          )
+        })
+      case reply {
+        Ok(info) ->
+          json_resp(
+            201,
+            j.obj([
+              #("id", j.str(id)),
+              #("burn_key", j.str(key)),
+              #("message", message_to_json(info)),
+            ]),
+          )
+        Error(error) ->
+          error_response(503, error) |> response.set_header("retry-after", "5")
+      }
+    }
   }
 }
 
@@ -244,9 +322,19 @@ fn message_to_json(info: MessageInfo) -> String {
   j.obj([
     #("id", j.str(info.id)),
     #("content", j.str(info.content)),
-    #("from_node", j.str(info.from_node)),
+    #("room", j.str(info.room)),
+    #("kind", j.str(info.kind)),
     #("ttl_ms", j.num(info.ttl_ms)),
     #("created_at", j.num(info.created_at)),
+    #("expires_at", j.num(info.created_at + info.ttl_ms)),
+    #(
+      "reactions",
+      j.obj(
+        list.map(["spark", "heart", "curious"], fn(key) {
+          #(key, j.num(dict.get(info.reactions, key) |> result.unwrap(0)))
+        }),
+      ),
+    ),
   ])
 }
 
@@ -254,7 +342,10 @@ fn message_to_json(info: MessageInfo) -> String {
 fn hash(value: String) -> String
 
 @external(erlang, "spectre_link_ffi", "random_id")
-fn generate_id() -> String
+fn random_id() -> String
+
+@external(erlang, "spectre_link_ffi", "now_ms")
+fn now_ms() -> Int
 
 fn dashboard_html() -> String {
   "<!DOCTYPE html>

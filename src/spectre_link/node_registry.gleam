@@ -3,24 +3,46 @@ import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
 import gleam/otp/actor
+import gleam/result
 import spectre_link/message_actor.{type MessageInfo, type Msg as ActorMsg}
 
 pub type RegistryMsg {
   AddMessage(
     id: String,
     content: String,
-    from_node: String,
+    room: String,
+    kind: String,
     ttl_ms: Int,
-    reply_to: Subject(Result(String, String)),
+    burn_hash: String,
+    reply_to: Subject(Result(MessageInfo, String)),
   )
-  ListMessages(reply_to: Subject(List(MessageInfo)))
+  ListMessages(room: String, reply_to: Subject(List(MessageInfo)))
   CountMessages(reply_to: Subject(Int))
+  BurnMessage(
+    id: String,
+    room: String,
+    burn_hash: String,
+    reply_to: Subject(Bool),
+  )
+  React(
+    id: String,
+    room: String,
+    client: String,
+    emoji: String,
+    reply_to: Subject(Result(MessageInfo, String)),
+  )
   Sweep
   ExpireMessage(id: String)
 }
 
 type Entry {
-  Entry(subject: Subject(ActorMsg), info: MessageInfo, deadline: Int)
+  Entry(
+    subject: Subject(ActorMsg),
+    info: MessageInfo,
+    deadline: Int,
+    burn_hash: String,
+    votes: Dict(String, String),
+  )
 }
 
 type State {
@@ -36,22 +58,13 @@ pub fn start() -> Result(Subject(RegistryMsg), actor.StartError) {
   })
   |> actor.on_message(handle_msg)
   |> actor.start()
-  |> result_map_data()
-}
-
-fn result_map_data(
-  r: Result(actor.Started(Subject(RegistryMsg)), actor.StartError),
-) -> Result(Subject(RegistryMsg), actor.StartError) {
-  case r {
-    Ok(started) -> Ok(started.data)
-    Error(e) -> Error(e)
-  }
+  |> result.map(fn(started) { started.data })
 }
 
 fn is_alive(subject: Subject(ActorMsg)) -> Bool {
   case process.subject_owner(subject) {
     Ok(pid) -> process.is_alive(pid)
-    Error(Nil) -> False
+    Error(_) -> False
   }
 }
 
@@ -59,11 +72,12 @@ fn handle_msg(
   state: State,
   msg: RegistryMsg,
 ) -> actor.Next(State, RegistryMsg) {
+  let now = monotonic_ms()
   let state =
     State(
       ..state,
       messages: dict.filter(state.messages, fn(_, e) {
-        e.deadline > monotonic_ms() && is_alive(e.subject)
+        e.deadline > now && is_alive(e.subject)
       }),
     )
   case msg {
@@ -73,25 +87,40 @@ fn handle_msg(
     }
     ExpireMessage(id) ->
       actor.continue(State(..state, messages: dict.delete(state.messages, id)))
-    AddMessage(id, content, from_node, ttl_ms, reply_to) -> {
-      let live_count =
-        state.messages
-        |> dict.values()
-        |> list.filter(fn(e) { is_alive(e.subject) })
-        |> list.length()
-      case live_count >= 500 {
+    CountMessages(reply) -> {
+      process.send(reply, dict.size(state.messages))
+      actor.continue(state)
+    }
+    ListMessages(room, reply) -> {
+      let live =
+        dict.values(state.messages)
+        |> list.filter(fn(e) { e.info.room == room })
+        |> list.map(fn(e) { e.info })
+      process.send(reply, live)
+      actor.continue(state)
+    }
+    AddMessage(id, content, room, kind, ttl_ms, burn_hash, reply) -> {
+      let room_count =
+        dict.values(state.messages) |> list.count(fn(e) { e.info.room == room })
+      case dict.size(state.messages) >= 500 || room_count >= 100 {
         True -> {
-          process.send(reply_to, Error("Server at capacity (max 500 messages)"))
+          process.send(
+            reply,
+            Error(
+              "This room or server is at capacity. Try again after messages expire.",
+            ),
+          )
           actor.continue(state)
         }
         False -> {
-          // Clamp TTL: min 1s, max 5min
           let safe_ttl = int.max(1000, int.min(ttl_ms, 300_000))
           let info =
             message_actor.MessageInfo(
-              id: id,
-              content: content,
-              from_node: from_node,
+              id:,
+              content:,
+              room:,
+              kind:,
+              reactions: dict.new(),
               ttl_ms: safe_ttl,
               created_at: now_ms(),
             )
@@ -103,45 +132,86 @@ fn handle_msg(
                 process.send_after(state.subject, safe_ttl, ExpireMessage(id))
               let entry =
                 Entry(
-                  subject: subject,
-                  info: info,
+                  subject:,
+                  info:,
                   deadline: monotonic_ms() + safe_ttl,
+                  burn_hash:,
+                  votes: dict.new(),
                 )
-              let new_state =
-                State(..state, messages: dict.insert(state.messages, id, entry))
-              process.send(reply_to, Ok(id))
-              actor.continue(new_state)
+              process.send(reply, Ok(info))
+              actor.continue(
+                State(..state, messages: dict.insert(state.messages, id, entry)),
+              )
             }
             Error(_) -> {
-              process.send(reply_to, Error("Failed to start actor"))
+              process.send(
+                reply,
+                Error("Unable to create message. Try again shortly."),
+              )
               actor.continue(state)
             }
           }
         }
       }
     }
-
-    ListMessages(reply_to) -> {
-      let live =
-        state.messages
-        |> dict.values()
-        |> list.filter(fn(e) { is_alive(e.subject) })
-        |> list.map(fn(e) { e.info })
-      let clean =
-        state.messages
-        |> dict.filter(fn(_, e) { is_alive(e.subject) })
-      process.send(reply_to, live)
-      actor.continue(State(..state, messages: clean))
+    BurnMessage(id, room, burn_hash, reply) -> {
+      case dict.get(state.messages, id) {
+        Ok(entry) if entry.info.room == room && entry.burn_hash == burn_hash -> {
+          process.send(entry.subject, message_actor.Expire)
+          process.send(reply, True)
+          actor.continue(
+            State(..state, messages: dict.delete(state.messages, id)),
+          )
+        }
+        _ -> {
+          process.send(reply, False)
+          actor.continue(state)
+        }
+      }
     }
-
-    CountMessages(reply_to) -> {
-      let count =
-        state.messages
-        |> dict.values()
-        |> list.filter(fn(e) { is_alive(e.subject) })
-        |> list.length()
-      process.send(reply_to, count)
-      actor.continue(state)
+    React(id, room, client, emoji, reply) -> {
+      case dict.get(state.messages, id) {
+        Ok(entry) if entry.info.room == room -> {
+          case
+            dict.size(entry.votes) >= 256 && !dict.has_key(entry.votes, client)
+          {
+            True -> {
+              process.send(reply, Error("Reaction capacity reached."))
+              actor.continue(state)
+            }
+            False -> {
+              let votes = case dict.get(entry.votes, client) {
+                Ok(previous) if previous == emoji ->
+                  dict.delete(entry.votes, client)
+                _ -> dict.insert(entry.votes, client, emoji)
+              }
+              let counts =
+                dict.values(votes)
+                |> list.fold(dict.new(), fn(counts, key) {
+                  dict.insert(
+                    counts,
+                    key,
+                    { dict.get(counts, key) |> result.unwrap(0) } + 1,
+                  )
+                })
+              let info =
+                message_actor.MessageInfo(..entry.info, reactions: counts)
+              let entry = Entry(..entry, votes:, info:)
+              process.send(reply, Ok(info))
+              actor.continue(
+                State(..state, messages: dict.insert(state.messages, id, entry)),
+              )
+            }
+          }
+        }
+        _ -> {
+          process.send(
+            reply,
+            Error("Message has expired or does not exist in this room."),
+          )
+          actor.continue(state)
+        }
+      }
     }
   }
 }

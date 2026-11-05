@@ -1,6 +1,8 @@
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/json
+import gleam/otp/system
 import gleam/result
 import gleeunit/should
 import spectre_link/json_utils
@@ -66,6 +68,14 @@ pub fn independent_registry_expiry_test() {
   |> result.is_ok()
   |> should.be_true()
   process.sleep(1100)
+  // Inspect state through OTP's system channel before ANY registry API call:
+  // reads that prune lazily must not hide a retained-content regression.
+  let assert Ok(pid) = process.subject_owner(registry)
+  let entries_decoder = {
+    use entries <- decode.field(1, decode.dict(decode.string, decode.dynamic))
+    decode.success(dict.size(entries))
+  }
+  system.get_state(pid) |> decode.run(entries_decoder) |> should.equal(Ok(0))
   process.call(registry, 1000, fn(reply) { node_registry.CountMessages(reply) })
   |> should.equal(0)
   process.call(registry, 1000, fn(reply) {

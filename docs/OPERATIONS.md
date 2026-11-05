@@ -40,7 +40,7 @@ nginx's app access log includes method, path **without query string**, status, s
 
 ## Tooling on this VPS
 
-Rebar3 3.26.0 is available at `/home/micu/.local/bin/rebar3`, extracted from the configured distribution package without a host package upgrade. The user's local bin is already in PATH. No build-tool path or developer home access is used by the production unit. The current release and configuration backup locations are recorded in RELEASE-REPORT.md.
+Rebar3 3.26.0 is available at `/home/micu/.local/bin/rebar3`, extracted from the configured distribution package without a host package upgrade. The user's local bin is already in PATH. No build-tool path or developer home access is used by the production unit. The current feature-release evidence is recorded in FEATURE-RELEASE.md; RELEASE-REPORT.md preserves the historical 2.0 rollout.
 
 ## Spectre 3 rooms, operator moderation and live updates
 

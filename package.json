@@ -1,0 +1,12 @@
+{
+  "name": "spectre-link-checks",
+  "private": true,
+  "scripts": {
+    "check:js": "node --check priv/static/dashboard.js",
+    "test:browser": "node scripts/browser_smoke.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "playwright": "1.64.1"
+  }
+}

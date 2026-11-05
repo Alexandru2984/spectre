@@ -50,3 +50,7 @@ Audit and plan; security foundation; room/reaction/burn API; responsive feed and
 ## Spectre 3 follow-on delivery
 
 The original follow-on proposals for private invitations, optional content encryption, live updates, moderation/reporting, QR sharing and RO/EN are implemented in the feature package described in FEATURE-PLAN.md. It also adds threaded replies, polls, presence, event lifetimes, discovery and daily prompts. Further SEO work is explicitly deferred to the next requested iteration. Distributed replication and browser push notifications remain separate proposals, not shipped functionality.
+
+## SEO follow-on completed
+
+After the feature rollout, the separate SEO stage added six server-rendered EN/RO public pages, self-canonical/reciprocal language alternatives, accurate social/structured metadata, public-only sitemap and scoped static compression. SEO-RELEASE.md records tests and activation. Search Console/indexing and field performance observations remain external measurement work rather than claimed results.

@@ -1,4 +1,5 @@
-#!/bin/bash
-# Run a second instance (auto-discovers peer on port 4000)
-cd /home/micu/unison
-gleam run
+#!/usr/bin/env bash
+set -euo pipefail
+# Independent local development instance. Registries are not replicated.
+export PORT="${PORT:-4401}"
+exec "$(dirname -- "${BASH_SOURCE[0]}")/run.sh"

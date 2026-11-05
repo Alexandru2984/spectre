@@ -15,18 +15,25 @@ pub type RegistryMsg {
   )
   ListMessages(reply_to: Subject(List(MessageInfo)))
   CountMessages(reply_to: Subject(Int))
+  Sweep
+  ExpireMessage(id: String)
 }
 
 type Entry {
-  Entry(subject: Subject(ActorMsg), info: MessageInfo)
+  Entry(subject: Subject(ActorMsg), info: MessageInfo, deadline: Int)
 }
 
 type State {
-  State(messages: Dict(String, Entry))
+  State(messages: Dict(String, Entry), subject: Subject(RegistryMsg))
 }
 
 pub fn start() -> Result(Subject(RegistryMsg), actor.StartError) {
-  actor.new(State(dict.new()))
+  actor.new_with_initialiser(1000, fn(subject) {
+    let _ = process.send_after(subject, 1000, Sweep)
+    Ok(
+      actor.initialised(State(dict.new(), subject)) |> actor.returning(subject),
+    )
+  })
   |> actor.on_message(handle_msg)
   |> actor.start()
   |> result_map_data()
@@ -48,8 +55,24 @@ fn is_alive(subject: Subject(ActorMsg)) -> Bool {
   }
 }
 
-fn handle_msg(state: State, msg: RegistryMsg) -> actor.Next(State, RegistryMsg) {
+fn handle_msg(
+  state: State,
+  msg: RegistryMsg,
+) -> actor.Next(State, RegistryMsg) {
+  let state =
+    State(
+      ..state,
+      messages: dict.filter(state.messages, fn(_, e) {
+        e.deadline > monotonic_ms() && is_alive(e.subject)
+      }),
+    )
   case msg {
+    Sweep -> {
+      let _ = process.send_after(state.subject, 1000, Sweep)
+      actor.continue(state)
+    }
+    ExpireMessage(id) ->
+      actor.continue(State(..state, messages: dict.delete(state.messages, id)))
     AddMessage(id, content, from_node, ttl_ms, reply_to) -> {
       let live_count =
         state.messages
@@ -76,9 +99,16 @@ fn handle_msg(state: State, msg: RegistryMsg) -> actor.Next(State, RegistryMsg) 
             Ok(subject) -> {
               let _ =
                 process.send_after(subject, safe_ttl, message_actor.Expire)
-              let entry = Entry(subject: subject, info: info)
+              let _ =
+                process.send_after(state.subject, safe_ttl, ExpireMessage(id))
+              let entry =
+                Entry(
+                  subject: subject,
+                  info: info,
+                  deadline: monotonic_ms() + safe_ttl,
+                )
               let new_state =
-                State(messages: dict.insert(state.messages, id, entry))
+                State(..state, messages: dict.insert(state.messages, id, entry))
               process.send(reply_to, Ok(id))
               actor.continue(new_state)
             }
@@ -101,7 +131,7 @@ fn handle_msg(state: State, msg: RegistryMsg) -> actor.Next(State, RegistryMsg) 
         state.messages
         |> dict.filter(fn(_, e) { is_alive(e.subject) })
       process.send(reply_to, live)
-      actor.continue(State(messages: clean))
+      actor.continue(State(..state, messages: clean))
     }
 
     CountMessages(reply_to) -> {
@@ -118,3 +148,6 @@ fn handle_msg(state: State, msg: RegistryMsg) -> actor.Next(State, RegistryMsg) 
 
 @external(erlang, "spectre_link_ffi", "now_ms")
 fn now_ms() -> Int
+
+@external(erlang, "spectre_link_ffi", "monotonic_ms")
+fn monotonic_ms() -> Int

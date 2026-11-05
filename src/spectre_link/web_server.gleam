@@ -1,9 +1,7 @@
 import gleam/bit_array
 import gleam/bytes_tree
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang/atom
 import gleam/erlang/process
-import gleam/http.{Get, Post}
+import gleam/http.{Get, Head, Post}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
@@ -11,22 +9,33 @@ import gleam/list
 import gleam/result
 import gleam/string
 import mist.{type Connection, type ResponseData}
+import spectre_link/config
 import spectre_link/json_utils as j
-import spectre_link/mesh_discovery
 import spectre_link/message_actor.{type MessageInfo}
 import spectre_link/node_registry.{type RegistryMsg}
+import spectre_link/rate_limit
+import spectre_link/validation
 
 pub fn start(
   port: Int,
   registry: process.Subject(RegistryMsg),
+  limiter: process.Subject(rate_limit.Msg),
 ) -> Result(Nil, String) {
   let handler = fn(req: Request(Connection)) -> Response(ResponseData) {
-    handle_request(req, registry)
+    handle_request(req, registry, limiter)
+    |> security_headers()
+    |> fn(res) {
+      case req.method {
+        Head -> response.set_body(res, mist.Bytes(bytes_tree.new()))
+        _ -> res
+      }
+    }
   }
 
   handler
   |> mist.new()
   |> mist.port(port)
+  |> mist.bind("127.0.0.1")
   |> mist.start()
   |> result.map(fn(_) { Nil })
   |> result.map_error(fn(e) { string.inspect(e) })
@@ -35,15 +44,86 @@ pub fn start(
 fn handle_request(
   req: Request(Connection),
   registry: process.Subject(RegistryMsg),
+  limiter: process.Subject(rate_limit.Msg),
 ) -> Response(ResponseData) {
   let path = request.path_segments(req)
   case req.method, path {
-    Get, [] -> serve_dashboard()
-    Get, ["static", "dashboard.js"] -> serve_dashboard_js()
-    Get, ["api", "messages"] -> list_messages(registry)
-    Post, ["api", "messages"] -> create_message(req, registry)
-    Get, ["api", "nodes"] -> list_nodes()
+    Get, [] | Head, [] -> serve_dashboard()
+    Get, ["static", "dashboard.js"] | Head, ["static", "dashboard.js"] ->
+      serve_dashboard_js()
+    Get, ["healthz"] | Head, ["healthz"] ->
+      json_resp(200, "{\"status\":\"ok\"}")
+    _, ["api", ..] -> {
+      let bucket = case req.method {
+        Get | Head -> rate_limit.Read
+        _ -> rate_limit.Write
+      }
+      let client =
+        request.get_header(req, "x-real-ip")
+        |> result.unwrap("loopback")
+        |> hash()
+      let wait =
+        process.call(limiter, waiting: 1000, sending: fn(reply) {
+          rate_limit.Check(client, bucket, reply)
+        })
+      case wait {
+        0 ->
+          case req.method, path {
+            Get, ["api", "messages"] | Head, ["api", "messages"] ->
+              list_messages(registry)
+            Post, ["api", "messages"] ->
+              case allowed_write(req) {
+                True -> create_message(req, registry)
+                False ->
+                  json_resp(
+                    403,
+                    "{\"error\":\"Cross-origin writes are not allowed.\"}",
+                  )
+              }
+            Get, ["api", "nodes"] | Head, ["api", "nodes"] ->
+              json_resp(200, "[\"local\"]")
+            _, ["api", "messages"] | _, ["api", "nodes"] ->
+              json_resp(405, "{\"error\":\"Method not allowed.\"}")
+              |> response.set_header("allow", "GET, HEAD, POST")
+            _, _ -> not_found()
+          }
+        _ ->
+          json_resp(
+            429,
+            "{\"error\":\"Too many requests. Try again shortly.\"}",
+          )
+          |> response.set_header("retry-after", int.to_string(wait))
+      }
+    }
     _, _ -> not_found()
+  }
+}
+
+fn security_headers(res: Response(ResponseData)) -> Response(ResponseData) {
+  res
+  |> response.set_header("x-content-type-options", "nosniff")
+  |> response.set_header("x-frame-options", "DENY")
+  |> response.set_header("referrer-policy", "no-referrer")
+  |> response.set_header(
+    "permissions-policy",
+    "camera=(), microphone=(), geolocation=()",
+  )
+  |> response.set_header(
+    "content-security-policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+  )
+}
+
+fn allowed_write(req: Request(Connection)) -> Bool {
+  let fetch_site =
+    request.get_header(req, "sec-fetch-site") |> result.unwrap("")
+  let origin = request.get_header(req, "origin") |> result.unwrap("")
+  fetch_site != "cross-site"
+  && {
+    origin == ""
+    || origin == config.origin()
+    || origin == "http://127.0.0.1:" <> int.to_string(config.port())
+    || origin == "http://localhost:" <> int.to_string(config.port())
   }
 }
 
@@ -84,7 +164,9 @@ fn serve_dashboard() -> Response(ResponseData) {
   html_resp(dashboard_html())
 }
 
-fn list_messages(registry: process.Subject(RegistryMsg)) -> Response(ResponseData) {
+fn list_messages(
+  registry: process.Subject(RegistryMsg),
+) -> Response(ResponseData) {
   let messages =
     process.call(registry, waiting: 5000, sending: fn(reply) {
       node_registry.ListMessages(reply_to: reply)
@@ -97,58 +179,65 @@ fn create_message(
   req: Request(Connection),
   registry: process.Subject(RegistryMsg),
 ) -> Response(ResponseData) {
-  case mist.read_body(req, 10_240) {
-    Error(_) -> bad_request("failed to read body")
-    Ok(req_with_body) -> {
-      case bit_array.to_string(req_with_body.body) {
-        Error(Nil) -> bad_request("invalid utf-8")
-        Ok(body_str) -> {
-          case parse_message_json(<<body_str:utf8>>) {
-            Error(_) -> bad_request("invalid json — expected {\"content\":\"...\",\"ttl\":N}")
-            Ok(#(content, ttl)) -> {
-              case string.length(content) > 500 {
-                True -> bad_request("content too long (max 500 chars)")
-                False -> {
+  let content_type =
+    request.get_header(req, "content-type")
+    |> result.unwrap("")
+    |> string.split(";")
+    |> list.first()
+    |> result.unwrap("")
+    |> string.trim()
+    |> string.lowercase()
+  let size =
+    request.get_header(req, "content-length")
+    |> result.try(int.parse)
+    |> result.unwrap(-1)
+  case content_type, request.get_header(req, "transfer-encoding"), size {
+    _, Ok(_), _ -> bad_request("Transfer encoding is not supported.")
+    _, _, n if n < 0 ->
+      json_resp(411, "{\"error\":\"Content-Length required.\"}")
+    _, _, n if n > 8192 ->
+      json_resp(413, "{\"error\":\"Request body exceeds 8192 bytes.\"}")
+    type_, _, _ if type_ != "application/json" ->
+      json_resp(415, "{\"error\":\"Use application/json.\"}")
+    _, _, _ ->
+      case mist.read_body(req, 8192) {
+        Error(_) -> bad_request("Unable to read request body.")
+        Ok(body_req) ->
+          case bit_array.to_string(body_req.body) {
+            Error(_) -> bad_request("Invalid UTF-8.")
+            Ok(body) ->
+              case validation.parse_message(body) {
+                Error(error) -> bad_request(error)
+                Ok(message) -> {
                   let id = generate_id()
-                  let node_str = atom.to_string(mesh_discovery.node_name())
                   let reply =
-                    process.call(registry, waiting: 5000, sending: fn(reply) {
+                    process.call(registry, waiting: 1000, sending: fn(reply) {
                       node_registry.AddMessage(
-                        id: id,
-                        content: content,
-                        from_node: node_str,
-                        ttl_ms: ttl,
+                        id:,
+                        content: message.content,
+                        from_node: "local",
+                        ttl_ms: message.ttl,
                         reply_to: reply,
                       )
                     })
                   case reply {
-                    Ok(msg_id) ->
+                    Ok(id) ->
                       json_resp(
                         201,
                         j.obj([
-                          #("id", j.str(msg_id)),
+                          #("id", j.str(id)),
                           #("status", j.str("created")),
                         ]),
                       )
-                    Error(e) -> bad_request(e)
+                    Error(error) ->
+                      json_resp(503, j.obj([#("error", j.str(error))]))
+                      |> response.set_header("retry-after", "5")
                   }
                 }
               }
-            }
           }
-        }
       }
-    }
   }
-}
-
-fn list_nodes() -> Response(ResponseData) {
-  let connected = mesh_discovery.connected_nodes()
-  let self_str = atom.to_string(mesh_discovery.node_name())
-  let all =
-    [self_str, ..list.map(connected, atom.to_string)]
-    |> list.map(j.str)
-  json_resp(200, j.arr(all))
 }
 
 fn message_to_json(info: MessageInfo) -> String {
@@ -161,15 +250,11 @@ fn message_to_json(info: MessageInfo) -> String {
   ])
 }
 
-@external(erlang, "spectre_link_ffi", "parse_message_json")
-fn parse_message_json(json: BitArray) -> Result(#(String, Int), Dynamic)
+@external(erlang, "spectre_link_ffi", "hash")
+fn hash(value: String) -> String
 
-@external(erlang, "spectre_link_ffi", "now_ms")
-fn now_ms() -> Int
-
-fn generate_id() -> String {
-  "msg_" <> int.to_string(now_ms()) <> "_" <> int.to_string(int.random(999_999))
-}
+@external(erlang, "spectre_link_ffi", "random_id")
+fn generate_id() -> String
 
 fn dashboard_html() -> String {
   "<!DOCTYPE html>

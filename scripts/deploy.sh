@@ -12,6 +12,7 @@ for spectre_tool in gleam rebar3 curl python3 sudo; do command -v "$spectre_tool
 sudo -n true
 python3 scripts/require_free_port.py 4402
 export ERL_FLAGS="${ERL_FLAGS:-+S 2:2 +SDcpu 1 +SDio 1 +A 2}"
+node scripts/build-locales.mjs --check
 gleam format --check src test
 gleam test
 gleam export erlang-shipment
@@ -101,6 +102,7 @@ for _ in {1..20}; do
   sleep 0.5
 done
 if (( ! spectre_ready )); then printf 'Isolated release did not become healthy.\n' >&2; exit 1; fi
+BASE_URL=http://127.0.0.1:4402 python3 scripts/seo_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/http_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/feature_smoke.py
 curl -fsS --max-time 5 http://127.0.0.1:4402/ >/dev/null

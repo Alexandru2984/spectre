@@ -26,9 +26,13 @@
   Object.assign(ro, {'Too many active events from this address.':'Prea multe evenimente active de la această adresă.'});
   ro['A poll needs 2-6 distinct options.']=ro['A poll needs 2–6 distinct options.'];
   ro['Poll options must contain 1-100 characters.']=ro['Poll options must contain 1–100 characters.'];
+  Object.assign(ro,{"Ephemeral conversations, polls and private events.": "Conversații efemere, sondaje și evenimente private.", "Start a public conversation or an invitation-only event. Share short-lived thoughts, reply, run a poll and see changes live. No account needed.": "Începe o conversație publică sau un eveniment cu invitație. Trimite gânduri efemere, răspunde, creează sondaje și vezi schimbările live. Nu ai nevoie de cont.", "Private invitations and optional browser encryption.": "Invitații private și criptare opțională în browser.", "Choose who receives the invitation and enable E2EE for message and poll text. Room metadata remains visible to the server; copied links and screenshots remain possible.": "Alege cui trimiți invitația și activează E2EE pentru textul mesajelor și sondajelor. Metadatele rămân vizibile serverului; linkurile pot fi copiate, iar capturile de ecran rămân posibile.", "Explore how Spectre works": "Descoperă cum funcționează Spectre", "Read the privacy and encryption limits": "Citește limitele de confidențialitate și criptare", "Spectre — ephemeral chat, polls and private event rooms": "Spectre — conversații efemere, sondaje și camere private", "Share ephemeral messages, replies and polls in public or private event rooms. Live updates, optional browser encryption and no account required.": "Trimite mesaje efemere, răspunsuri și sondaje în camere publice sau private. Actualizări live, criptare opțională în browser și fără cont.", "About Spectre — ephemeral conversations and private events": "Despre Spectre — conversații efemere și evenimente private", "Explore public and private event rooms, ephemeral threads, polls, live presence, local QR invitations and optional browser encryption in Spectre.": "Descoperă camere publice și private, conversații efemere, sondaje, prezență live, invitații QR locale și criptare opțională în browser în Spectre.", "Spectre privacy — invitations, encryption and ephemeral data": "Confidențialitate Spectre — invitații, criptare și date efemere", "Learn what public rooms, private invitations and optional E2EE protect, how messages expire, and what metadata and copies can remain.": "Află ce protejează camerele publice, invitațiile private și E2EE opțional, cum expiră mesajele și ce metadate sau copii pot rămâne.", "Spectre — live, ephemeral messages for the moment": "Spectre — mesaje live și efemere pentru această clipă", "Spectre — Good thoughts. Short lives. A space for fleeting thoughts.": "Spectre — Gânduri frumoase. Clipe scurte. Un loc pentru gânduri trecătoare."});
   const originals = new WeakMap(), attributes = new WeakMap();
-  let language = 'en';
-  try { language = localStorage.getItem('spectre:language') === 'ro' ? 'ro' : 'en'; } catch {}
+  const explicitRomanian = /^\/ro(?:\/|$)/.test(location.pathname);
+  let language = explicitRomanian ? 'ro' : 'en';
+  try { if (!explicitRomanian && !['/', '/about', '/privacy'].includes(location.pathname)) language = localStorage.getItem('spectre:language') === 'ro' ? 'ro' : 'en'; } catch {}
+  const reverse = new Map(Object.entries(ro).map(([en,translated]) => [translated,en]));
+  const canonical = text => reverse.has(text.trim()) ? text.replace(text.trim(),reverse.get(text.trim())) : text;
   const patterns = [
     [/^(.+) Try again in (\d+)s\.$/,m=>t(m[1])+' Reîncearcă peste '+m[2]+'s.'],
     [/^(\d+) active sessions$/,m=>m[1]+' sesiuni active'],[/^(\d+) messages · (\d+) active sessions$/,m=>m[1]+' mesaje · '+m[2]+' sesiuni active'],
@@ -46,11 +50,16 @@
   let observer;
   function apply() {
     observer?.disconnect();
+    const title=document.querySelector('title');
+    if(title)title.textContent=t(canonical(title.textContent));
+    for(const meta of document.querySelectorAll('meta[name="description"],meta[name="twitter:title"],meta[name="twitter:description"],meta[property="og:title"],meta[property="og:description"],meta[property="og:image:alt"]')) {
+      meta.content=t(canonical(meta.content));
+    }
     const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
     while(walker.nextNode()) {
       const node=walker.currentNode;if(excluded(node))continue;
       const current=node.nodeValue,record=originals.get(node);
-      const source=record && current===record.last ? record.source : current;
+      const source=record && current===record.last ? record.source : canonical(current);
       const text=source.trim();if(!text)continue;
       const result=source.replace(text,t(text));
       originals.set(node,{source,last:result});if(current!==result)node.nodeValue=result;
@@ -61,11 +70,22 @@
       for(const name of ['aria-label','placeholder','title']) {
         if(!node.hasAttribute(name))continue;
         const current=node.getAttribute(name),record=records[name];
-        const source=record && current===record.last ? record.source : current;const result=t(source);
+        const source=record && current===record.last ? record.source : canonical(current);const result=t(source);
         records[name]={source,last:result};if(current!==result)node.setAttribute(name,result);
       }
       attributes.set(node,records);
     }
+    for(const link of document.querySelectorAll('a[href^="/"]')) {
+      const url=new URL(link.href,location.origin);
+      if(url.origin!==location.origin)continue;
+      const base=url.pathname.replace(/^\/ro(?=\/|$)/,'') || '/';
+      if(!['/','/about','/privacy'].includes(base))continue;
+      url.pathname=language==='ro'?'/ro'+(base==='/'?'':base):base;
+      const target=url.pathname+url.search+url.hash;
+      if(link.getAttribute('href')!==target)link.setAttribute('href',target);
+    }
+    const ogLocale=document.querySelector('meta[property="og:locale"]');if(ogLocale)ogLocale.content=language==='ro'?'ro_RO':'en_US';
+    const ogAlternate=document.querySelector('meta[property="og:locale:alternate"]');if(ogAlternate)ogAlternate.content=language==='ro'?'en_US':'ro_RO';
     document.documentElement.lang=language;
     const select=document.getElementById('language-input');if(select)select.value=language;
     observer?.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['aria-label','placeholder','title']});
@@ -73,6 +93,12 @@
   function setLanguage(value) {
     language=value==='ro'?'ro':'en';window.SpectreI18n.language=language;
     try{localStorage.setItem('spectre:language',language);}catch{}
+    const path=location.pathname.replace(/^\/ro(?=\/|$)/,'') || '/';
+    const target=language==='ro' ? '/ro'+(path==='/'?'':path) : path;
+    history.replaceState(null,'',target+location.search+location.hash);
+    const canonicalLink=document.querySelector('link[rel=canonical]');
+    if(canonicalLink)canonicalLink.href=location.origin+target;
+    const ogUrl=document.querySelector('meta[property="og:url"]');if(ogUrl)ogUrl.content=location.origin+target;
     apply();document.dispatchEvent(new Event('spectre:language'));
   }
   window.SpectreI18n={t,apply,setLanguage,language};

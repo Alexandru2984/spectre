@@ -111,7 +111,7 @@ try {
   assert(!JSON.stringify(stored).includes(content));
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('#motion-btn').getAttribute('aria-pressed'), 'true');
-  for (const route of ['/about', '/privacy']) {
+  for (const route of ['/about', '/privacy', '/ro', '/ro/about', '/ro/privacy']) {
     await page.goto(baseURL + route);
     await noOverflow(route);
     await accessibility(route);

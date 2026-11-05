@@ -45,17 +45,14 @@ fn handle_request(
 ) -> Response(ResponseData) {
   let path = request.path_segments(req)
   case req.method, path {
-    Get, [] | Head, [] -> {
-      let res = serve_asset("index.html", "text/html; charset=utf-8")
-      case request.get_query(req) |> result.unwrap([]) |> list.is_empty() {
-        True -> res
-        False -> response.set_header(res, "x-robots-tag", "noindex, nofollow")
-      }
-    }
-    Get, ["about"] | Head, ["about"] ->
-      serve_asset("about.html", "text/html; charset=utf-8")
-    Get, ["privacy"] | Head, ["privacy"] ->
-      serve_asset("privacy.html", "text/html; charset=utf-8")
+    Get, [] | Head, [] -> serve_page(req, "index.html")
+    Get, ["ro"] | Head, ["ro"] -> serve_page(req, "index.ro.html")
+    Get, ["about"] | Head, ["about"] -> serve_page(req, "about.html")
+    Get, ["privacy"] | Head, ["privacy"] -> serve_page(req, "privacy.html")
+    Get, ["ro", "about"] | Head, ["ro", "about"] ->
+      serve_page(req, "about.ro.html")
+    Get, ["ro", "privacy"] | Head, ["ro", "privacy"] ->
+      serve_page(req, "privacy.ro.html")
     Get, ["robots.txt"] | Head, ["robots.txt"] ->
       serve_asset("robots.txt", "text/plain; charset=utf-8")
     Get, ["sitemap.xml"] | Head, ["sitemap.xml"] ->
@@ -190,6 +187,17 @@ fn json_resp(status: Int, body: String) -> Response(ResponseData) {
   |> response.set_header("x-robots-tag", "noindex, nofollow")
   |> response.set_header("x-server-time", int.to_string(now_ms()))
   |> response.set_body(mist.Bytes(bytes_tree.from_string(body)))
+}
+
+fn serve_page(
+  req: Request(Connection),
+  name: String,
+) -> Response(ResponseData) {
+  let res = serve_asset(name, "text/html; charset=utf-8")
+  case request.get_query(req) |> result.unwrap([]) |> list.is_empty() {
+    True -> res
+    False -> response.set_header(res, "x-robots-tag", "noindex, nofollow")
+  }
 }
 
 fn serve_asset(name: String, content_type: String) -> Response(ResponseData) {

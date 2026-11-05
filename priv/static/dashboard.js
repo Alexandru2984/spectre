@@ -160,7 +160,7 @@
     const name = knownRooms[room] || '#' + room;
     $('#room-crumb').textContent = name.toLowerCase();
     $('#room-label').textContent = name;
-    document.title = room === 'lobby' && !new URLSearchParams(location.search).has('room') ? 'Spectre — live, ephemeral messages for the moment' : name + ' · Spectre';
+    document.title = room === 'lobby' && !new URLSearchParams(location.search).has('room') ? SpectreI18n.t('Spectre — ephemeral chat, polls and private event rooms') : name + ' · Spectre';
     $('#poll-editor').hidden = true;
     $('#kind-input').value = room === 'ideas' ? 'idea' : room === 'questions' ? 'question' : 'thought';
     $$('[data-filter]').forEach(button => button.setAttribute('aria-pressed', button.dataset.filter === 'all'));
@@ -804,7 +804,7 @@
   function dailyChallenge() { const day = Math.floor(Date.now() / 86400000); return challenges[day % challenges.length][SpectreI18n.language === 'ro' ? 1 : 0]; }
   function updateDaily() { $('#daily-topic').dataset.untranslated = ''; $('#daily-topic').textContent = dailyChallenge(); }
   $('#daily-use').addEventListener('click', () => { if (!$('#content-input').value.trim()) { $('#content-input').value = dailyChallenge() + '\n'; updateCharacterCount(); } $('#content-input').focus(); });
-  document.addEventListener('spectre:language', () => { updateDaily(); render(); });
+  document.addEventListener('spectre:language', () => { if (!new URLSearchParams(location.search).has('room')) document.title = SpectreI18n.t('Spectre — ephemeral chat, polls and private event rooms'); updateDaily(); render(); });
   updateDaily();
   document.addEventListener('visibilitychange', () => { if (document.hidden) { state.watchController?.abort(); clearTimeout(state.presenceTimer); } else { heartbeat(); watchRoom(); } });
   window.addEventListener('pagehide', () => { state.watchController?.abort(); if (clientToken && !state.locked) fetch(roomPath('presence'), { method: 'DELETE', headers: authHeaders(), keepalive: true, credentials: 'omit' }).catch(() => {}); });

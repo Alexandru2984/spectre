@@ -9,6 +9,12 @@ server {
     include snippets/spectre-security.conf;
     access_log /var/log/nginx/spectre.access.log spectre_minimal;
     error_log /var/log/nginx/spectre.error.log warn;
+    # Compress generic HTML/static assets; message API JSON remains uncompressed.
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_types text/css text/javascript image/svg+xml application/xml;
     client_max_body_size 8k;
     client_body_timeout 10s;
     client_header_timeout 10s;

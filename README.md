@@ -16,6 +16,12 @@ Share a thought, idea or question in a public room. Choose a lifetime, react whi
 
 Public room names do not authorize access. Private invitations grant access to anyone holding them; optional E2EE protects content rather than metadata, screenshots, malicious browsers or malicious origin code. There are no authenticated identities, per-person revocation, key recovery or forward secrecy. The timer does not guarantee physical erasure. Closing/reloading loses unsaved invitation/owner/burn controls. See [privacy](https://spectre.micutu.com/privacy), [feature threat model](docs/FEATURE-PLAN.md) and [operations](docs/OPERATIONS.md).
 
+## Public pages and localization
+
+English public pages are `/`, `/about`, `/privacy`; Romanian equivalents are `/ro`, `/ro/about`, `/ro/privacy`. Each is served as complete HTML with language-specific metadata, self-canonical and reciprocal language alternates. Room query URLs and all API content remain noindex; conversation content and invitation keys never enter the sitemap, metadata or structured data. The explicit URL determines the initial language; switching languages preserves in-memory room keys without reloading.
+
+After changing the translation catalog or English page templates, run `node scripts/build-locales.mjs` to regenerate the reviewed `.ro.html` files. CI checks these artifacts for drift. See [SEO plan](docs/SEO-PLAN.md); no search ranking or rich-result promise is made.
+
 ## Local development
 
 Requires Gleam 1.16+, Erlang/OTP 27+, Rebar3 3.26. Node 24, npm and Python 3 are used only for checks.

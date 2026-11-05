@@ -37,3 +37,7 @@ nginx's app access log includes method, path **without query string**, status, s
 ## Health and incident response
 
 `/healthz` is a minimal liveness endpoint. Use `systemctl show spectre-link-canary -p ActiveState -p NRestarts -p MemoryCurrent`, `ss -lnt`, and bounded journal inspection to check operation. Health does not verify edge policies or attest that memory is physically erased. The incident runbook and proposed alert thresholds are in SECURITY-AUDIT.md. An alert destination/on-call must be chosen by the operator; this release does not send messages to a third party.
+
+## Tooling on this VPS
+
+Rebar3 3.26.0 is available at `/home/micu/.local/bin/rebar3`, extracted from the configured distribution package without a host package upgrade. The user's local bin is already in PATH. No build-tool path or developer home access is used by the production unit. The current release and configuration backup locations are recorded in RELEASE-REPORT.md.

@@ -1,12 +1,10 @@
-import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/json
-import gleam/otp/system
 import gleam/result
 import gleeunit/should
+import spectre_link/hub
 import spectre_link/json_utils
-import spectre_link/node_registry
 import spectre_link/rate_limit
 import spectre_link/validation
 
@@ -53,36 +51,28 @@ pub fn bounds_and_control_characters_test() {
 }
 
 pub fn independent_registry_expiry_test() {
-  let assert Ok(registry) = node_registry.start()
-  process.call(registry, 1000, fn(reply) {
-    node_registry.AddMessage(
-      "unit-expiry",
-      "temporary",
+  let assert Ok(registry) = hub.start()
+  let #(code, _) =
+    hub.api(
+      registry,
+      "POST",
+      ["api", "messages"],
       "lobby",
-      "thought",
-      1000,
-      "hash",
-      reply,
+      "",
+      "",
+      "",
+      "unit",
+      "-1",
+      "",
+      "{\"content\":\"temporary\",\"ttl\":3000}",
     )
-  })
-  |> result.is_ok()
-  |> should.be_true()
-  process.sleep(1100)
-  // Inspect state through OTP's system channel before ANY registry API call:
-  // reads that prune lazily must not hide a retained-content regression.
-  let assert Ok(pid) = process.subject_owner(registry)
-  let entries_decoder = {
-    use entries <- decode.field(1, decode.dict(decode.string, decode.dynamic))
-    decode.success(dict.size(entries))
-  }
-  system.get_state(pid) |> decode.run(entries_decoder) |> should.equal(Ok(0))
-  process.call(registry, 1000, fn(reply) { node_registry.CountMessages(reply) })
-  |> should.equal(0)
-  process.call(registry, 1000, fn(reply) {
-    node_registry.ListMessages("lobby", reply)
-  })
-  |> should.equal([])
+  code |> should.equal(201)
+  process.sleep(3150)
+  retained_messages(registry) |> should.equal(0)
 }
+
+@external(erlang, "spectre_link_test_ffi", "retained_messages")
+fn retained_messages(pid: process.Pid) -> Int
 
 pub fn independent_read_write_budgets_test() {
   let assert Ok(limiter) = rate_limit.start()

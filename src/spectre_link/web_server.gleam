@@ -1,8 +1,7 @@
 import gleam/bit_array
 import gleam/bytes_tree
-import gleam/dict
 import gleam/erlang/process
-import gleam/http.{Delete, Get, Head, Post}
+import gleam/http.{Get, Head, Post} as gleam_http
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
@@ -11,15 +10,13 @@ import gleam/result
 import gleam/string
 import mist.{type Connection, type ResponseData}
 import spectre_link/config
+import spectre_link/hub
 import spectre_link/json_utils as j
-import spectre_link/message_actor.{type MessageInfo}
-import spectre_link/node_registry.{type RegistryMsg}
 import spectre_link/rate_limit
-import spectre_link/validation
 
 pub fn start(
   port: Int,
-  registry: process.Subject(RegistryMsg),
+  registry: process.Pid,
   limiter: process.Subject(rate_limit.Msg),
 ) -> Result(Nil, String) {
   let handler = fn(req: Request(Connection)) -> Response(ResponseData) {
@@ -43,7 +40,7 @@ pub fn start(
 
 fn handle_request(
   req: Request(Connection),
-  registry: process.Subject(RegistryMsg),
+  registry: process.Pid,
   limiter: process.Subject(rate_limit.Msg),
 ) -> Response(ResponseData) {
   let path = request.path_segments(req)
@@ -110,96 +107,47 @@ fn handle_request(
 fn route_api(
   req: Request(Connection),
   path: List(String),
-  registry: process.Subject(RegistryMsg),
+  registry: process.Pid,
 ) -> Response(ResponseData) {
-  let room =
-    request.get_query(req)
-    |> result.unwrap([])
-    |> list.key_find("room")
-    |> result.unwrap("lobby")
-  case validation.validate_room(room) {
-    Error(error) -> error_response(400, error)
-    Ok(room) ->
-      case req.method, path {
-        Get, ["api", "messages"] | Head, ["api", "messages"] -> {
-          let messages = get_messages(registry, room)
-          json_resp(200, j.arr(list.map(messages, message_to_json)))
-        }
-        Get, ["api", "stats"] | Head, ["api", "stats"] -> {
-          let messages = get_messages(registry, room)
-          json_resp(
-            200,
-            j.obj([
-              #("room", j.str(room)),
-              #("active", j.num(list.length(messages))),
-              #("room_limit", "100"),
-              #("max_ttl_ms", "300000"),
-            ]),
-          )
-        }
-        Post, ["api", "messages"] ->
-          with_body(req, fn(body) { create_message(body, registry) })
-        Delete, ["api", "messages", id] -> {
-          let key = request.get_header(req, "x-burn-key") |> result.unwrap("")
-          case validation.valid_token(key) {
-            False ->
-              error_response(404, "Message or burn capability not found.")
-            True -> {
-              let burned =
-                process.call(registry, 1000, fn(reply) {
-                  node_registry.BurnMessage(id, room, hash(key), reply)
-                })
-              case burned {
-                True -> json_resp(200, "{\"status\":\"burned\"}")
-                False ->
-                  error_response(404, "Message or burn capability not found.")
-              }
-            }
-          }
-        }
-        Post, ["api", "messages", id, "reactions"] -> {
-          let client =
-            request.get_header(req, "x-spectre-client") |> result.unwrap("")
-          case validation.valid_token(client) {
-            False ->
-              error_response(400, "A valid X-Spectre-Client token is required.")
-            True ->
-              with_body(req, fn(body) {
-                case validation.parse_reaction(body) {
-                  Error(error) -> error_response(400, error)
-                  Ok(emoji) -> {
-                    let reply =
-                      process.call(registry, 1000, fn(reply) {
-                        node_registry.React(
-                          id,
-                          room,
-                          hash(client),
-                          emoji,
-                          reply,
-                        )
-                      })
-                    case reply {
-                      Ok(info) -> json_resp(200, message_to_json(info))
-                      Error(error) -> error_response(404, error)
-                    }
-                  }
-                }
-              })
-          }
-        }
-        Get, ["api", "nodes"] | Head, ["api", "nodes"] ->
-          json_resp(200, "[\"local\"]")
-        _, ["api", "messages"]
-        | _, ["api", "messages", _]
-        | _, ["api", "messages", _, "reactions"]
-        | _, ["api", "stats"]
-        | _, ["api", "nodes"]
-        ->
-          error_response(405, "Method not allowed.")
-          |> response.set_header("allow", "GET, HEAD, POST, DELETE")
-        _, _ -> error_response(404, "Not found.")
+  let query = request.get_query(req) |> result.unwrap([])
+  let room = list.key_find(query, "room") |> result.unwrap("lobby")
+  let since = list.key_find(query, "since") |> result.unwrap("-1")
+  let get = fn(name) { request.get_header(req, name) |> result.unwrap("") }
+  let next = fn(body) {
+    let #(code, json) =
+      hub.api(
+        registry,
+        case req.method {
+          Head -> "GET"
+          _ -> gleam_http_method(req.method)
+        },
+        path,
+        room,
+        get("x-room-key"),
+        get("x-moderator-key"),
+        get("x-spectre-client"),
+        hash(get("x-real-ip")),
+        since,
+        get("x-burn-key"),
+        body,
+      )
+    json_resp(code, json)
+    |> fn(res) {
+      case code {
+        429 -> response.set_header(res, "retry-after", "10")
+        503 -> response.set_header(res, "retry-after", "5")
+        _ -> res
       }
+    }
   }
+  case req.method {
+    Post -> with_body(req, next)
+    _ -> next("")
+  }
+}
+
+fn gleam_http_method(method: gleam_http.Method) -> String {
+  gleam_http.method_to_string(method)
 }
 
 fn security_headers(res: Response(ResponseData)) -> Response(ResponseData) {
@@ -257,15 +205,6 @@ fn error_response(status: Int, error: String) -> Response(ResponseData) {
   |> response.set_header("connection", "close")
 }
 
-fn get_messages(
-  registry: process.Subject(RegistryMsg),
-  room: String,
-) -> List(MessageInfo) {
-  process.call(registry, 1000, fn(reply) {
-    node_registry.ListMessages(room, reply)
-  })
-}
-
 fn with_body(
   req: Request(Connection),
   next: fn(String) -> Response(ResponseData),
@@ -305,69 +244,8 @@ fn with_body(
   }
 }
 
-fn create_message(
-  body: String,
-  registry: process.Subject(RegistryMsg),
-) -> Response(ResponseData) {
-  case validation.parse_message(body) {
-    Error(error) -> error_response(400, error)
-    Ok(message) -> {
-      let id = random_id()
-      let key = random_id()
-      let reply =
-        process.call(registry, 1000, fn(reply) {
-          node_registry.AddMessage(
-            id:,
-            content: message.content,
-            room: message.room,
-            kind: message.kind,
-            ttl_ms: message.ttl,
-            burn_hash: hash(key),
-            reply_to: reply,
-          )
-        })
-      case reply {
-        Ok(info) ->
-          json_resp(
-            201,
-            j.obj([
-              #("id", j.str(id)),
-              #("burn_key", j.str(key)),
-              #("message", message_to_json(info)),
-            ]),
-          )
-        Error(error) ->
-          error_response(503, error) |> response.set_header("retry-after", "5")
-      }
-    }
-  }
-}
-
-fn message_to_json(info: MessageInfo) -> String {
-  j.obj([
-    #("id", j.str(info.id)),
-    #("content", j.str(info.content)),
-    #("room", j.str(info.room)),
-    #("kind", j.str(info.kind)),
-    #("ttl_ms", j.num(info.ttl_ms)),
-    #("created_at", j.num(info.created_at)),
-    #("expires_at", j.num(info.created_at + info.ttl_ms)),
-    #(
-      "reactions",
-      j.obj(
-        list.map(["spark", "heart", "curious"], fn(key) {
-          #(key, j.num(dict.get(info.reactions, key) |> result.unwrap(0)))
-        }),
-      ),
-    ),
-  ])
-}
-
 @external(erlang, "spectre_link_ffi", "hash")
 fn hash(value: String) -> String
-
-@external(erlang, "spectre_link_ffi", "random_id")
-fn random_id() -> String
 
 @external(erlang, "spectre_link_ffi", "now_ms")
 fn now_ms() -> Int

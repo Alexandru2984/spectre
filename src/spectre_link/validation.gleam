@@ -55,7 +55,7 @@ pub fn validate_room(room: String) -> Result(String, String) {
 
 fn validate_kind(kind: String) -> Result(String, String) {
   case kind {
-    "thought" | "idea" | "question" -> Ok(kind)
+    "thought" | "idea" | "question" | "poll" -> Ok(kind)
     _ -> Error("Choose thought, idea or question.")
   }
 }

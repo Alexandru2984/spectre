@@ -116,6 +116,11 @@ try {
     await noOverflow(route);
     await accessibility(route);
     assert.equal(await page.locator('h1').count(), 1);
+    await page.locator('#language-input').selectOption('ro');
+    await accessibility(route + ' Romanian');
+    await noOverflow(route + ' Romanian');
+    assert.equal(await page.locator('html').getAttribute('lang'),'ro');
+    await page.locator('#language-input').selectOption('en');
   }
   assert.deepEqual(errors, []);
   console.log('Browser flows passed: rooms, Unicode/XSS text, posting, reactions, filters, sorting, constellation, burn, sharing, shortcuts, themes, offline recovery, reduced motion, storage and responsive layout.');

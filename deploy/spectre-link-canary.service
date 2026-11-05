@@ -18,6 +18,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=spectre-link-canary
 UMask=0077
+EnvironmentFile=-/etc/spectre-link/environment
 Environment=PORT=4000
 Environment=SPECTRE_ORIGIN=https://spectre.micutu.com
 Environment=HOME=/run/spectre-link

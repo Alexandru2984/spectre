@@ -1,5 +1,7 @@
 # Security audit and threat model
 
+This document preserves the original 2.0 assessment. Spectre 3 adds managed/private rooms and optional browser encryption; see FEATURE-PLAN.md for its trust boundaries and FEATURE-RELEASE.md for final verification.
+
 Date: 2026-11-05. Assessment: source review, dependency-source inspection, bounded local checks, read-only examination of the application's service/vhost, and public response headers. This is not an independent penetration test or a host-wide compromise investigation. No user message bodies were read for the audit.
 
 ## Findings at baseline

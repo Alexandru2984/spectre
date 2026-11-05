@@ -43,16 +43,17 @@ assert req('GET','/api/reports?room='+room,headers=owner)[0]['count']==1
 req('POST','/api/presence?room='+room,{'alias':'Temporary Ghost'})
 assert req('GET','/api/presence?room='+room)['count']==1
 revision=req('GET','/api/room?room='+room)['revision']
-with concurrent.futures.ThreadPoolExecutor() as pool:
-    future=pool.submit(req,'GET',f'/api/events?room={room}&since={revision}')
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    futures=[pool.submit(req,'GET',f'/api/events?room={room}&since={revision}') for _ in range(4)]
     time.sleep(.15)
+    req('GET',f'/api/events?room={room}&since={revision}',status=429)
     req('DELETE',f"/api/messages/{poll['id']}?room={room}",headers=owner)
-    assert future.result(timeout=3)['revision']!=revision
+    for future in futures: assert future.result(timeout=3)['revision']!=revision
 req('DELETE',f"/api/messages/{msg['id']}?room={room}",headers={'X-Burn-Key':msg['burn_key']})
 assert req('GET','/api/messages?room='+room)==[]
 private=req('POST','/api/rooms',{'name':'Private event','minutes':15,'private':True,'encrypted':True},status=201)
 private_id=private['room']['id']; access={'X-Room-Key':private['access_key']};private_owner={**access,'X-Moderator-Key':private['owner_key']}
-for path in ['messages','room','presence','reports','events']:
+for path in ['messages','snapshot','room','presence','reports','events']:
     req('GET',f'/api/{path}?room={private_id}',status=403)
 assert all(x['id']!=private_id for x in req('GET','/api/rooms'))
 assert req('GET','/api/room?room='+private_id,headers=access)['encrypted']

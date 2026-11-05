@@ -7,6 +7,7 @@ python3 scripts/require_free_port.py 4400
 gleam format --check src test
 shellcheck run.sh run_peer.sh scripts/*.sh
 npm run check:js
+cmp priv/static/qrcode.js node_modules/qrcode-generator/dist/qrcode.js
 npm audit --audit-level=high
 gleam test
 gleam export erlang-shipment
@@ -21,4 +22,6 @@ for _ in {1..30}; do
 done
 if (( ! spectre_check_ready )); then cat /tmp/spectre-check.log; exit 1; fi
 BASE_URL=http://127.0.0.1:4400 python3 scripts/http_smoke.py
+BASE_URL=http://127.0.0.1:4400 python3 scripts/feature_smoke.py
 BASE_URL=http://127.0.0.1:4400 npm run test:browser
+BASE_URL=http://127.0.0.1:4400 npm run test:features

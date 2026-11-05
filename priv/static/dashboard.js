@@ -8,7 +8,7 @@
   const kinds = { thought: ['A thought', 'spark'], idea: ['An idea', 'bulb'], question: ['A question', 'question'], poll: ['A poll', 'list'] };
   const reactionNames = { spark: 'Inspired', heart: 'Love', curious: 'Curious' };
   const state = {
-    capabilities: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, sending: false, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
+    capabilities: new Map(), aliases: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, sending: false, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
     room: 'lobby', messages: [], burnKeys: new Map(), myReactions: new Map(),
     ttl: 30000, filter: 'all', view: 'feed', paused: false, failures: 0,
     clockOffset: 0, timer: null, toastTimer: null, syncing: false, generation: 0,
@@ -135,7 +135,7 @@
     state.controller?.abort();
     clearTimeout(state.timer);
     state.syncing = false;
-    state.room = room;
+    state.room = room; state.alias = state.aliases.get(room) || '';
     state.messages = [];
     state.selectedId = null;
     state.failures = 0;
@@ -250,6 +250,7 @@
     for (const [id, reaction] of state.myReactions) if (reaction.expires <= timestamp) state.myReactions.delete(id);
     for (const [id, vote] of state.myPollVotes) if (vote.expires <= timestamp) state.myPollVotes.delete(id);
     for (const [id, expires] of state.hidden) if (expires <= timestamp) state.hidden.delete(id);
+    for (const [room, cap] of state.capabilities) if (cap.expires && cap.expires <= timestamp) { state.capabilities.delete(room); state.aliases.delete(room); }
   }
   $('#retry-btn').addEventListener('click', syncRoom);
   window.addEventListener('online', syncRoom);
@@ -308,7 +309,7 @@
       if (!state.paused) syncRoom();
     } catch (error) {
       if (generation === state.generation) feedback(error.status ? error.message + (error.status === 429 ? ' Try again in ' + error.retryAfter + 's.' : '') : 'We couldn’t confirm the send. Your draft is kept; check the room before retrying.', true);
-    } finally { state.sending = false; $('#send-btn').disabled = state.locked; }
+    } finally { state.sending = false; $('#send-btn').disabled = state.locked || Boolean(state.roomMeta?.encrypted && !capabilities().key); }
   });
   const prompts = {
     small: ['thought', 'A small thing that made today better: '],
@@ -318,7 +319,7 @@
   $$('[data-prompt]').forEach(button => button.addEventListener('click', () => {
     const [kind, prompt] = prompts[button.dataset.prompt];
     if ($('#content-input').value.trim()) { $('#content-input').focus(); return; }
-    $('#kind-input').value = kind; $('#content-input').value = prompt;
+    $('#kind-input').value = kind; $('#poll-editor').hidden = true; $('#content-input').value = SpectreI18n.t(prompt.trim()) + ' ';
     updateCharacterCount(); $('#content-input').focus();
   }));
   $('#empty-action').addEventListener('click', () => {
@@ -326,7 +327,7 @@
       state.filter = 'all'; $('#search-input').value = '';
       $$('[data-filter]').forEach(button => button.setAttribute('aria-pressed', button.dataset.filter === 'all'));
       render();
-    } else $('#content-input').focus();
+    } else if (state.hidden.size) { state.hidden.clear(); render(); } else $('#content-input').focus();
   });
   $$('[data-filter]').forEach(button => button.addEventListener('click', () => {
     state.filter = button.dataset.filter;
@@ -400,7 +401,7 @@
     $('#empty-state').hidden = messages.length > 0;
     $('#empty-title').textContent = noMatch ? 'No thoughts in this corner. Yet.' : 'A little quiet. A lot of possibility.';
     $('#empty-description').textContent = noMatch ? 'Try another filter, clear your search, or start a new thought.' : 'Be the first to leave a thought. Sometimes that’s all it takes.';
-    $('#empty-action').firstChild.textContent = noMatch ? 'Clear the filters ' : 'Start a little something';
+    $('#empty-action').firstChild.textContent = state.hidden.size && state.filter === 'all' && !$('#search-input').value ? 'Show hidden messages ' : noMatch ? 'Clear the filters ' : 'Start a little something';
     $('.starter-prompts').hidden = noMatch;
     $('#feed').hidden = state.view !== 'feed' || !messages.length;
     $('#constellation-panel').hidden = state.view !== 'constellation' || !messages.length;
@@ -613,6 +614,7 @@
     copyText(url, state.roomMeta?.private ? 'Private invitation copied. Share it carefully.' : 'Room link copied.');
     showDialog('#share-dialog');
   }
+  $('#share-dialog').addEventListener('close', () => { $('#share-url').value = ''; const canvas = $('#share-qr'); canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); });
   $('#copy-invite').addEventListener('click', () => copyText(inviteUrl(), 'Invitation copied.'));
   $('#room-private').addEventListener('change', () => { if ($('#room-private').checked) $('#room-discoverable').checked = false; else $('#room-encrypted').checked = false; });
   $('#room-encrypted').addEventListener('change', () => { if ($('#room-encrypted').checked) { $('#room-private').checked = true; $('#room-discoverable').checked = false; } });
@@ -721,7 +723,12 @@
   }
   function updateRoomMeta(meta, people) {
     state.roomMeta = meta; state.locked = false; state.revision = meta.revision;
-    $('#room-locked').hidden = true; $('#send-btn').disabled = state.sending;
+    const cap = capabilities();
+    if (meta.expires_at) state.capabilities.set(state.room, { ...cap, expires: meta.expires_at });
+    const missingKey = meta.encrypted && !cap.key;
+    $('#room-locked').hidden = !missingKey;
+    if (missingKey) $('#room-locked').textContent = 'Encryption key missing. Open the complete invitation to send or read encrypted text.';
+    $('#send-btn').disabled = state.sending || missingKey;
     document.body.classList.remove('event-ended');
     $('#room-label').textContent = knownRooms[meta.id] || meta.name;
     for (const node of [$('#room-label'), $('#room-crumb')]) { if (knownRooms[meta.id]) delete node.dataset.untranslated; else node.dataset.untranslated = ''; }
@@ -749,7 +756,7 @@
     if (generation === state.generation) state.presenceTimer = setTimeout(heartbeat, 20000);
   }
   $('#people-btn').addEventListener('click', () => { $('#alias-input').value = state.alias; showDialog('#people-dialog'); });
-  $('#save-alias').addEventListener('click', async () => { state.alias = $('#alias-input').value.trim(); await heartbeat(); await syncRoom(); $('#people-dialog').close(); toast('Temporary alias updated.'); });
+  $('#save-alias').addEventListener('click', async () => { state.alias = $('#alias-input').value.trim(); state.aliases.set(state.room,state.alias); await heartbeat(); await syncRoom(); $('#people-dialog').close(); toast('Temporary alias updated.'); });
   $('#discover-btn').addEventListener('click', async () => {
     showDialog('#discover-dialog'); $('#discovery-list').replaceChildren(element('p', '', 'Loading rooms…'));
     try {

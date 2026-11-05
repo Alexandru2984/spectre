@@ -67,6 +67,19 @@ trap rollback_on_error EXIT
 if ! getent passwd spectre-link >/dev/null; then
   sudo -n useradd --system --user-group --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin spectre-link
 fi
+# Create one operator capability outside the repository without printing it.
+sudo -n install -d -m 0700 /etc/spectre-link
+sudo -n python3 - <<'PYSECRET'
+import os,secrets
+path='/etc/spectre-link/environment'
+try:
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+except FileExistsError:
+    pass
+else:
+    with os.fdopen(fd,'w') as file:
+        file.write('SPECTRE_MODERATOR_KEY='+secrets.token_hex(24)+'\n')
+PYSECRET
 sudo -n install -d -m 0755 /opt/spectre-link /opt/spectre-link/releases "$spectre_release_dir"
 sudo -n cp -a build/erlang-shipment/. "$spectre_release_dir/"
 sudo -n chown -R root:root "$spectre_release_dir"
@@ -89,6 +102,7 @@ for _ in {1..20}; do
 done
 if (( ! spectre_ready )); then printf 'Isolated release did not become healthy.\n' >&2; exit 1; fi
 BASE_URL=http://127.0.0.1:4402 python3 scripts/http_smoke.py
+BASE_URL=http://127.0.0.1:4402 python3 scripts/feature_smoke.py
 curl -fsS --max-time 5 http://127.0.0.1:4402/ >/dev/null
 cleanup_preview
 sudo -n install -d -m 0700 "$spectre_backup_dir"

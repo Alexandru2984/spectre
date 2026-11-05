@@ -46,3 +46,7 @@ These are proposals, not claims of shipped functionality. Avoid adding accounts,
 ## Implemented in this iteration
 
 Audit and plan; security foundation; room/reaction/burn API; responsive feed and constellation; browser accessibility/network checks; scoped immutable-release tooling; static about/privacy pages and SEO; pinned CI and dependency update configuration are implemented. Final production activation and its observed results are recorded in RELEASE-REPORT.md. Follow-on proposals above remain future work rather than implied shipped features.
+
+## Spectre 3 follow-on delivery
+
+The original follow-on proposals for private invitations, optional content encryption, live updates, moderation/reporting, QR sharing and RO/EN are implemented in the feature package described in FEATURE-PLAN.md. It also adds threaded replies, polls, presence, event lifetimes, discovery and daily prompts. Further SEO work is explicitly deferred to the next requested iteration. Distributed replication and browser push notifications remain separate proposals, not shipped functionality.

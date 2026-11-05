@@ -99,3 +99,24 @@ fn spend_writes(limiter: process.Subject(rate_limit.Msg), remaining: Int) {
     }
   }
 }
+
+pub fn event_expiry_removes_every_dependant_test() {
+  expired_event_cleanup() |> should.equal(Nil)
+}
+
+@external(erlang, "spectre_link_test_ffi", "expired_event_cleanup")
+fn expired_event_cleanup() -> Nil
+
+pub fn replies_never_outlive_their_parent_test() {
+  reply_deadlines() |> should.equal(Nil)
+}
+
+@external(erlang, "spectre_link_test_ffi", "reply_deadlines")
+fn reply_deadlines() -> Nil
+
+pub fn otp_diagnostics_redact_content_and_capabilities_test() {
+  diagnostic_redaction() |> should.equal(Nil)
+}
+
+@external(erlang, "spectre_link_test_ffi", "diagnostic_redaction")
+fn diagnostic_redaction() -> Nil

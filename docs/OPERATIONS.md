@@ -6,7 +6,7 @@ Requires Gleam 1.16+, Erlang/OTP 27+, and Rebar3 3.26. Node 24 and Python 3 are 
 
 `./run.sh` starts an isolated development instance on `127.0.0.1:4000`; set `PORT=4400` when working on the production VPS. `./run_peer.sh` runs an independent development instance on 4401. There is no automatic node discovery or message replication. `sys.config` is a retained legacy file, not loaded by the new service. Do not enable distributed Erlang to add browser users.
 
-Configuration: `PORT` (1024–65535), `SPECTRE_ORIGIN` (exact allowed public origin). Local browser origins on the configured loopback port are allowed for development. API clients without Origin are allowed but subject to the same validation/capacity/rate limits. No environment file or credentials are needed.
+Configuration: `PORT` (1024–65535), `SPECTRE_ORIGIN` (exact allowed public origin). Local browser origins on the configured loopback port are allowed for development. API clients without Origin are allowed but subject to the same validation/capacity/rate limits. Development needs no environment file. Production moderation uses the root-owned optional environment file described below.
 
 ## Deploy
 
@@ -41,3 +41,15 @@ nginx's app access log includes method, path **without query string**, status, s
 ## Tooling on this VPS
 
 Rebar3 3.26.0 is available at `/home/micu/.local/bin/rebar3`, extracted from the configured distribution package without a host package upgrade. The user's local bin is already in PATH. No build-tool path or developer home access is used by the production unit. The current release and configuration backup locations are recorded in RELEASE-REPORT.md.
+
+## Spectre 3 rooms, operator moderation and live updates
+
+Managed events use random reserved `r-` IDs and 15/30/60-minute lifetimes. Unknown or expired reserved IDs fail closed. Built-in rooms and legacy public names remain public. One OTP coordinator serializes room authorization, mutations, dependent expiry and revisions; individual messages have linked lifetime actors. Owner capabilities can moderate their room or close its event; a read invitation cannot. Room read/encryption/owner keys remain separate. Restarting clears managed events and invalidates their invitations.
+
+The deploy script creates `/etc/spectre-link/environment` only if absent, with a random `SPECTRE_MODERATOR_KEY`, root-owned mode 0600 inside a mode-0700 directory. The unit reads it through EnvironmentFile. The application account cannot read that file directly. The operator can retrieve/rotate this key privately through root access; do not paste it into public issues, logs, URLs or messages. Paste it into the in-app moderation dialog to review reports in public rooms. It does not bypass private-room read authorization. Owners can separately copy their room key before closing/reloading the tab. Changing the environment key requires restarting this service and clears active ephemeral state.
+
+Live updates use capped asynchronous HTTP long polling (20s maximum hold, 100 total watchers, 30 per room and four per address), with revision notifications, reconnect/backoff, visibility handling and periodic snapshot fallback. nginx upstream read timeout is 35s. No WebSocket, SSE subscription or unbounded subscriber queue is claimed. Presence expires after 45s without a heartbeat. Counts are page sessions; aliases and votes are not identities. Limits: 256 active managed events, five per page token, ten per address, 500 active messages globally, 100 per room, 30 direct replies per parent, 256 poll/reaction voters per message, 64 reporters per message, 1000 presence sessions globally and 100 per room.
+
+Only explicitly listed public events are discovered. Reports, votes and children disappear with their message/event. Hide is local to a page and can be undone. Public/private metadata and optional pseudonyms are visible to authorized room participants. QR encoding uses the locally served, locked qrcode-generator 2.0.4 script; no external QR vendor receives invitations.
+
+Encrypted private rooms use native Web Crypto AES-256-GCM, a fresh random 96-bit IV per post, 128-bit tag and authenticated room/kind/parent/option-count data. Content keys are 256-bit random values shared only through URL fragments. The client encrypts message, reply and poll text; the server still handles metadata and anonymous vote counts. Invitations are bearer capabilities, with no per-person revocation, key recovery, identity authentication or forward secrecy. Close and recreate the event to replace its participants/keys. Read the current in-app privacy page for the complete boundary. Automated tests are not an independent crypto audit.

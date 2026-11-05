@@ -2,8 +2,9 @@
   "name": "spectre-link-checks",
   "private": true,
   "scripts": {
-    "check:js": "node --check priv/static/dashboard.js",
-    "test:browser": "node scripts/browser_smoke.mjs"
+    "check:js": "node --check priv/static/dashboard.js && node --check priv/static/crypto.js && node --check priv/static/i18n.js",
+    "test:browser": "node scripts/browser_smoke.mjs",
+    "test:features": "node scripts/browser_features.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

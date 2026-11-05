@@ -63,6 +63,11 @@ req('DELETE','/api/room?room='+private_id,headers=access,status=403)
 req('DELETE','/api/room?room='+private_id,headers=private_owner)
 req('GET','/api/messages?room='+private_id,headers=access,status=404)
 req('POST','/api/messages',{'content':'cannot revive','room':private_id,'ttl':3000},status=404)
-req('DELETE','/api/room?room='+room,headers=owner)
+revision=req('GET','/api/room?room='+room)['revision']
+with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    closed=pool.submit(req,'GET',f'/api/events?room={room}&since={revision}')
+    time.sleep(.15)
+    req('DELETE','/api/room?room='+room,headers=owner)
+    assert closed.result(timeout=3)['closed'] is True
 req('GET','/api/presence?room='+room,status=404)
 print(f'{checks} feature/authorization checks passed.')

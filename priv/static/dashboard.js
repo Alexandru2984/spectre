@@ -778,6 +778,7 @@
     try {
       const { data } = await api(roomPath('events') + '&since=' + encodeURIComponent(state.revision), { signal: controller.signal });
       if (generation !== state.generation || state.paused || state.locked) return;
+      if (data.closed) { lockRoom('This event has ended. Its messages and sessions have been removed.'); return; }
       if (data.revision !== state.revision) await syncRoom();
     } catch (error) {
       if (generation !== state.generation || state.paused || document.hidden || state.locked) return;

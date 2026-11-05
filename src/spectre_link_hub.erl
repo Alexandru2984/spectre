@@ -824,9 +824,8 @@ notify(S) ->
                                            gen_server:reply(maps:get(from,
                                                                      W),
                                                             response(200,
-                                                                     #{revision =>
-                                                                           version(Room,
-                                                                                   S)})),
+                                                                     #{revision => version(Room, S),
+                                                                       closed => managed(Room) andalso not maps:is_key(Room, maps:get(rooms,S))})),
                                            false;
                                        false ->
                                            true

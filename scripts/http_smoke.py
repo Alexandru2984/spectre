@@ -42,6 +42,7 @@ for path, content_type in [('/about', 'text/html'), ('/privacy', 'text/html'), (
 raw, headers = request('GET', '/')
 assert b'rel="canonical"' in raw and b'og:image' in raw and b'name="description"' in raw
 assert 'x-robots-tag' not in headers
+assert 'no-transform' in headers['cache-control']
 raw, headers = request('GET', '/?room=' + room)
 assert headers['x-robots-tag'] == 'noindex, nofollow'
 assert raw.startswith(b'<!doctype html>')

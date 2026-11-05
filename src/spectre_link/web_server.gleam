@@ -243,7 +243,7 @@ fn serve_asset(name: String, content_type: String) -> Response(ResponseData) {
     Ok(body) ->
       response.new(200)
       |> response.set_header("content-type", content_type)
-      |> response.set_header("cache-control", "no-cache")
+      |> response.set_header("cache-control", "public, no-cache, no-transform")
       |> response.set_body(mist.Bytes(bytes_tree.from_bit_array(body)))
     Error(_) -> error_response(503, "This page is temporarily unavailable.")
   }

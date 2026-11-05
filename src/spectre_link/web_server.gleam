@@ -48,7 +48,27 @@ fn handle_request(
 ) -> Response(ResponseData) {
   let path = request.path_segments(req)
   case req.method, path {
-    Get, [] | Head, [] -> serve_asset("index.html", "text/html; charset=utf-8")
+    Get, [] | Head, [] -> {
+      let res = serve_asset("index.html", "text/html; charset=utf-8")
+      case request.get_query(req) |> result.unwrap([]) |> list.is_empty() {
+        True -> res
+        False -> response.set_header(res, "x-robots-tag", "noindex, nofollow")
+      }
+    }
+    Get, ["about"] | Head, ["about"] ->
+      serve_asset("about.html", "text/html; charset=utf-8")
+    Get, ["privacy"] | Head, ["privacy"] ->
+      serve_asset("privacy.html", "text/html; charset=utf-8")
+    Get, ["robots.txt"] | Head, ["robots.txt"] ->
+      serve_asset("robots.txt", "text/plain; charset=utf-8")
+    Get, ["sitemap.xml"] | Head, ["sitemap.xml"] ->
+      serve_asset("sitemap.xml", "application/xml; charset=utf-8")
+    Get, ["favicon.ico"] | Head, ["favicon.ico"] ->
+      serve_asset("favicon.svg", "image/svg+xml")
+    Get, ["static", "favicon.svg"] | Head, ["static", "favicon.svg"] ->
+      serve_asset("favicon.svg", "image/svg+xml")
+    Get, ["static", "social.png"] | Head, ["static", "social.png"] ->
+      serve_asset("social.png", "image/png")
     Get, ["static", "dashboard.js"] | Head, ["static", "dashboard.js"] ->
       serve_asset("dashboard.js", "text/javascript; charset=utf-8")
     Get, ["static", "dashboard.css"] | Head, ["static", "dashboard.css"] ->
@@ -234,6 +254,7 @@ fn read_asset(name: String) -> Result(BitArray, Nil)
 
 fn error_response(status: Int, error: String) -> Response(ResponseData) {
   json_resp(status, j.obj([#("error", j.str(error))]))
+  |> response.set_header("connection", "close")
 }
 
 fn get_messages(

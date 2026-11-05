@@ -1,132 +1,69 @@
-# Spectre-Link 👻
+# Spectre · Spectre-Link
 
-A distributed ephemeral messaging system built on the BEAM (Erlang Virtual Machine), written in Gleam.
+A public space for fleeting thoughts, built with Gleam and Erlang/OTP. Try it at **https://spectre.micutu.com**.
 
-## What is Spectre-Link?
+Share a thought, idea or question in a public room. Choose a lifetime, react while it is here, and watch it disappear. No account or message database. Every message is an OTP actor, backed by a bounded registry with independent expiry.
 
-Each message is a **separate OTP Actor process** with a TTL (time-to-live). When the TTL expires, the process dies and the data vanishes — no database, no persistence, no trace. Multiple instances discover each other via Distributed Erlang.
+## Features
 
-```
-  Instance A (port 4000)          Instance B (port 4001)
-  ┌─────────────────────┐         ┌─────────────────────┐
-  │  NodeRegistry       │◄───────►│  NodeRegistry       │
-  │  ┌─────────────┐    │         │  ┌─────────────┐    │
-  │  │ Msg "Hello" │    │         │  │ Msg "World" │    │
-  │  │ TTL: 30s    │    │         │  │ TTL: 60s    │    │
-  │  └─────────────┘    │         │  └─────────────┘    │
-  │  ┌─────────────┐    │         └─────────────────────┘
-  │  │ Msg "Bye"   │    │
-  │  │ TTL: 5s ✗  │    │   ← Process dies, data gone
-  │  └─────────────┘    │
-  └─────────────────────┘
-```
+- Public rooms: lobby, ideas, questions, after-hours and named rooms with shareable links.
+- Thoughts, ideas and questions, with 15s / 30s / 1m / 5m lifetime presets (API: 3–300s).
+- Live feed and interactive constellation; local search, category/mine filters and sorting.
+- Three toggleable reactions with one selection per page token and message.
+- Creator-only early burn using a random capability, kept only in the current page's memory.
+- Live countdowns, pause/resume updates, network recovery and clock-skew compensation.
+- Light/dark themes, keyboard shortcuts, reduced motion and responsive mobile layout.
+- Local assets, strict CSP, validated UTF-8 JSON, separate read/write limits, bounded rooms/messages/reactions.
+- Public about/privacy pages, metadata, social preview, sitemap and room/API noindex headers.
 
-## Erlang Hot-Swapping Architecture
+**All rooms are public.** Knowing a room name is not authentication. Messages are not end-to-end encrypted. The timer does not prevent copies/screenshots, remove infrastructure logs, or guarantee physical erasure of memory. Closing or reloading loses your burn controls. See [privacy](https://spectre.micutu.com/privacy) and the [security audit](docs/SECURITY-AUDIT.md).
 
-BEAM enables **zero-downtime code upgrades** via OTP's `sys` module callbacks.
+## Local development
 
-### How it works
+Requires Gleam 1.16+, Erlang/OTP 27+, Rebar3 3.26. Node 24, npm and Python 3 are used only for checks.
 
-1. **`code_change/3` callback** — when a new module version is loaded, OTP calls `code_change(OldVsn, State, Extra)` on the running actor. You transform the old state to the new state format.
-
-2. **Two-version module coexistence** — BEAM keeps two versions of each module in memory simultaneously (old + new). Processes already executing in the old module continue safely; new calls start using the new code.
-
-3. **Gleam actors via `gleam_otp`** — Gleam's Actor abstraction sits on top of Erlang's `gen_server`. The `on_message` handler gets called by the OTP framework, which means all OTP system messages (including code upgrade signals) are handled transparently.
-
-4. **Rolling upgrades** — In a cluster, you can upgrade nodes one at a time. Distributed Erlang keeps them talking while you upgrade.
-
-```erlang
-%% Erlang gen_server style (what gleam_otp wraps):
-code_change(OldVsn, OldState, _Extra) ->
-    NewState = migrate_state(OldState),
-    {ok, NewState}.
+```sh
+PORT=4400 ./run.sh
+# http://127.0.0.1:4400
 ```
 
-## Compilation: Gleam → BEAM Bytecode
+Do not start a second development instance on port 4000 on the production VPS. `./run_peer.sh` uses 4401; its registry is independent. Distributed Erlang is disabled; connecting BEAM nodes does not replicate messages.
 
-```bash
-gleam build
+## Checks
+
+```sh
+npm ci --ignore-scripts
+npx playwright install chromium
+./scripts/check.sh
 ```
 
-This:
-1. Parses `.gleam` source files
-2. Type-checks everything
-3. Code-generates Erlang (`.erl` files in `build/dev/erlang/spectre_link/`)
-4. Compiles Erlang → `.beam` bytecode files
-5. Bundles into an OTP application
-
-The generated `.beam` files live in:
-```
-build/dev/erlang/spectre_link/ebin/
-```
-
-## Multi-Node Setup with Distributed Erlang
-
-### Connecting nodes with `net_adm:ping`
-
-```erlang
-%% In Erlang shell on node A:
-(spectre_link_4000@localhost)> net_adm:ping('spectre_link_4001@localhost').
-pong  %% ← nodes are now connected
-```
-
-Or via `erl_connect` from the OS shell:
-```bash
-erl -name admin@localhost -setcookie secret -eval \
-  "net_adm:ping('spectre_link_4000@localhost'), init:stop()."
-```
-
-### EPMD (Erlang Port Mapper Daemon)
-
-Distributed Erlang uses `epmd` to find processes. It starts automatically when a node goes distributed. Check active nodes:
-```bash
-epmd -names
-```
-
-## Running
-
-### Single node
-```bash
-./run.sh
-# Opens dashboard at http://localhost:4000
-```
-
-### Two nodes (multi-node mesh)
-```bash
-# Terminal 1
-./run.sh
-
-# Terminal 2
-./run_peer.sh
-# Auto-discovers and connects to port 4000 node
-# Opens dashboard at http://localhost:4001
-```
+Use `npx playwright install --with-deps chromium` on a fresh Linux CI machine. Port 4400 must be free. The check script builds a shipment and tests that exact release with Gleam unit tests, HTTP regressions, browser flows and automated axe WCAG A/AA checks. Browser screenshots go to ignored `test-results/`. Automated checks do not replace a full manual accessibility audit or an independent pentest.
 
 ## API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Dashboard |
-| GET | `/api/messages` | List live messages |
-| POST | `/api/messages` | Create message `{"content":"...", "ttl": 30000}` |
-| GET | `/api/nodes` | List connected Erlang nodes |
+All message reads are scoped to a public room; omitted `room` defaults to `lobby`. Responses containing messages are `no-store` and `noindex`. `X-Server-Time` supplies the server clock in milliseconds. All mutation bodies require `Content-Type: application/json` and a bounded Content-Length; cross-origin browser writes are rejected. No CORS access is granted.
 
-## Architecture
+| Method | Path | Request / response |
+| --- | --- | --- |
+| GET | `/api/messages?room=lobby` | Array of active messages in that room |
+| POST | `/api/messages` | `{"content":"Hello","ttl":30000,"room":"lobby","kind":"thought"}` → `id`, `burn_key`, `message` |
+| POST | `/api/messages/:id/reactions?room=lobby` | `{"emoji":"spark"}`; header `X-Spectre-Client`: 48 lowercase hex characters. Choices: `spark`, `heart`, `curious`; selecting again toggles off. |
+| DELETE | `/api/messages/:id?room=lobby` | Header `X-Burn-Key`: returned creator capability. Never put it in a URL. |
+| GET | `/api/stats?room=lobby` | Active count and room/lifetime limits |
+| GET | `/api/nodes` | Compatibility alias list `["local"]`; no internal node names |
+| GET | `/healthz` | Minimal liveness status |
 
+Content: 1–500 graphemes, at most 2000 UTF-8 bytes, no unsupported control characters. Room names: 1–32 lowercase ASCII letters/numbers/hyphens, first character alphanumeric. Max 100 active messages per room, 500 globally, 256 reaction tokens per message. Application write budget: 30/min/client and 600/min globally; reads use a separate budget. Proxy limits and shared NAT addresses can also affect clients. A 429 includes Retry-After; capacity returns 503. Anonymous reaction tokens deter accidental duplicates, not determined vote manipulation.
+
+## Architecture and operations
+
+```text
+Browser → Cloudflare → nginx → loopback Mist HTTP server
+                                   ├── rate-limit actor (bounded minute windows)
+                                   └── registry actor (bounded, room-scoped)
+                                        └── message actors + expiry timers
 ```
-spectre_link (main)
-├── port_scanner        - FFI: find free TCP port
-├── node_registry       - OTP Actor: tracks message actors
-│   └── message_actor   - OTP Actor: one per message, dies on TTL
-├── mesh_discovery      - FFI: distributed Erlang node management
-└── web_server          - mist HTTP server with live dashboard
-```
 
-## Dependencies
+Critical actors are linked to the application entry process. A critical failure exits the instance; systemd restarts an empty instance rather than persisting message content. Expiry uses monotonic deadlines on the server; public timestamps use wall-clock time. No claim of durable delivery, private rooms, distributed replication or automatic hot upgrades is made.
 
-- [Gleam](https://gleam.run) 1.16.0
-- Erlang/OTP 25
-- [mist](https://github.com/rawhat/mist) — pure Gleam HTTP server
-- [gleam_otp](https://hexdocs.pm/gleam_otp) — OTP actors/supervisors
-- [gleam_erlang](https://hexdocs.pm/gleam_erlang) — Erlang interop
-- [gleam_json](https://hexdocs.pm/gleam_json) — JSON encoding/decoding
+[Operations and rollback](docs/OPERATIONS.md) · [Audit](docs/SECURITY-AUDIT.md) · [Roadmap](docs/ROADMAP.md). Run `./scripts/deploy.sh` only on the configured VPS from a clean committed checkout. It tests a root-owned release under a dedicated systemd identity before switching this application's service/vhost. Restarts clear all live content.

@@ -151,7 +151,8 @@
     $('#content-input').value = '';
     updateCharacterCount();
     feedback('');
-    $('#message-dialog').close();
+    $$('dialog[open]').forEach(dialog => dialog.close());
+    state.burnId = null;
     const custom = $('#custom-room-link');
     custom.hidden = Object.hasOwn(knownRooms, room);
     custom.dataset.room = room;
@@ -165,7 +166,7 @@
     const name = knownRooms[room] || '#' + room;
     $('#room-crumb').textContent = name.toLowerCase();
     $('#room-label').textContent = name;
-    document.title = name + ' · Spectre';
+    document.title = room === 'lobby' && !new URLSearchParams(location.search).has('room') ? 'Spectre — live, ephemeral messages for the moment' : name + ' · Spectre';
     $('#kind-input').value = room === 'ideas' ? 'idea' : room === 'questions' ? 'question' : 'thought';
     $$('[data-filter]').forEach(button => button.setAttribute('aria-pressed', button.dataset.filter === 'all'));
     if (push) { const url = new URL(location.href); url.search = ''; url.searchParams.set('room', room); url.hash = ''; history.pushState(null, '', url); }

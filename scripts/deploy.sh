@@ -10,6 +10,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 for spectre_tool in gleam rebar3 curl python3 sudo; do command -v "$spectre_tool" >/dev/null; done
 sudo -n true
+python3 scripts/require_free_port.py 4402
 export ERL_FLAGS="${ERL_FLAGS:-+S 2:2 +SDcpu 1 +SDio 1 +A 2}"
 gleam format --check src test
 gleam test

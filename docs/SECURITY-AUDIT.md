@@ -47,3 +47,26 @@ Tabletop: not independently exercised with the operator; local smoke/regression 
 ## Verdict
 
 Baseline: **mitigate before promotion**. Anonymous public content, upstream edge behavior, physical memory erasure and absence of external alerting remain explicit residual risks even after code fixes. Track final verification and limitations in the release report rather than claiming the site is vulnerability-free.
+
+## Remediation and local verification
+
+The original ten findings are addressed in code and checked-in operational configuration. Runtime isolation and nginx activation must additionally be confirmed in the release report after deployment.
+
+- S01: typed JSON decoding, standard escaping, UTF-8/string/byte/control/TTL/type validation. Unicode round trips and malformed data are covered by unit/HTTP checks.
+- S02: registry expiry messages, periodic sweeps and monotonic read/write deadlines. A regression test inspects OTP state **before any registry API call** after expiry and confirms that retained entries are gone.
+- S03: distribution and automatic port scanning removed. A dedicated service identity, inaccessible home/checkout, root-owned release, disabled core/crash dumps, resource limits and loopback-only network policy are defined in the new unit.
+- S04: separate method-dependent nginx keys and independent application read/write budgets; UI polling every four seconds with non-overlapping requests, Retry-After/backoff and visible network state.
+- S05: application and proxy CSP/security headers. No external script, inline script/style, user HTML rendering or remote embed. SVG assets are local fixed assets.
+- S06: exact-origin/Fetch Metadata checks for browser writes, JSON-only mutation bodies, bounded per-client/global windows and cryptographic 192-bit identifiers/capabilities. Creator keys are hashed at rest in memory and omitted from lists. Anonymous reactions remain intentionally susceptible to a determined client minting fresh tokens, subject to write/capacity limits.
+- S07: unsupported transfer encoding and missing/oversized lengths rejected; actual byte length checked; errors close the upstream connection. Public traffic remains behind nginx request buffering/timeouts.
+- S08: unit tests, HTTP regressions, browser/axe checks, reproducible shipment checks, pinned read-only CI workflow and a preview-before-switch deployment script. Port availability guards prevent test mutations against a pre-existing listener.
+- S09: only the public alias `local` is returned. Health/stats expose minimal non-sensitive status/counts.
+- S10: README, in-app guide and public privacy page explain public rooms, no E2EE, loss of burn controls on reload and limits of expiry/physical erasure. No distributed replication is claimed.
+
+Additional product boundaries verified: room isolation for read/react/burn; wrong or missing burn capability rejected; reaction changes/toggles have bounded token storage; room names reject traversal, uppercase and trailing newline; room URLs and API responses are noindex; message bodies and keys are not written to browser storage. The frontend provides text-only rendering, so hostile HTML is displayed literally.
+
+Dependency review on 2026-11-05: npm audit reported zero known advisories for the locked development tree; OSV querybatch returned zero matching advisories across 13 locked Hex packages. Mist's upstream security page listed no published advisories: https://github.com/rawhat/mist/security . These are dated negative lookups with database coverage limitations, not proof of absence. No host-wide package update or OS vulnerability certification was performed.
+
+Pre-release check suite: seven Gleam unit tests, 69 HTTP checks against an isolated compiled shipment, browser workflows at desktop/mobile sizes, automated axe WCAG A/AA checks including static information pages, JavaScript syntax, Gleam formatting and ShellCheck. GitHub-hosted CI is configured but has not been run remotely without a push.
+
+Solo runbook walkthrough: considered failed preview startup, failed proxy validation, capability leakage and suspected app compromise. The preview gate leaves production unchanged until it succeeds; configuration validation occurs before reload; failed activation restores saved configuration/previous release where available. A leaked burn key can destroy only its message in its room, not grant server access. Suspected compromise requires stopping this service, preserving restricted infrastructure evidence, and investigating credentials reachable by the prior shared identity. No real incident or operator-led tabletop was staged. Automatic external alerting/on-call ownership remains unconfigured.

@@ -36,6 +36,16 @@ def request(method, path='/', body=None, headers=None, expect=200):
 
 request('HEAD')
 request('GET', '/healthz')
+for path, content_type in [('/about', 'text/html'), ('/privacy', 'text/html'), ('/robots.txt', 'text/plain'), ('/sitemap.xml', 'application/xml'), ('/static/favicon.svg', 'image/svg+xml'), ('/static/social.png', 'image/png')]:
+    raw, headers = request('GET', path)
+    assert headers['content-type'].startswith(content_type)
+raw, headers = request('GET', '/')
+assert b'rel="canonical"' in raw and b'og:image' in raw and b'name="description"' in raw
+assert 'x-robots-tag' not in headers
+raw, headers = request('GET', '/?room=' + room)
+assert headers['x-robots-tag'] == 'noindex, nofollow'
+assert raw.startswith(b'<!doctype html>')
+request('GET', '/static/unknown-file', expect=404)
 text = 'Salutări 👻 "quotes" \\ slash\n<script>alert(1)</script>'
 raw, _ = request('POST', '/api/messages', {'content': text, 'ttl': 3000, 'room': room, 'kind': 'idea'}, expect=201)
 created = json.loads(raw)
@@ -67,6 +77,7 @@ request('POST', '/api/messages', {}, {'Origin': 'https://evil.example'}, expect=
 request('POST', '/api/messages', {}, {'Sec-Fetch-Site': 'cross-site'}, expect=403)
 request('POST', '/api/messages', '{} trailing', {'Content-Type': 'application/json'}, expect=400)
 request('POST', '/api/messages', b'\xff\xfe', {'Content-Type': 'application/json'}, expect=400)
+request('POST', '/api/messages', b'2\r\n{}\r\n0\r\n\r\n', {'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked'}, expect=400)
 request('POST', '/api/messages', '{}', {'Content-Type': 'text/plain'}, expect=415)
 request('POST', '/api/messages', 'x' * 8200, {'Content-Type': 'application/json'}, expect=413)
 request('POST', '/api/messages', {'content': '   ', 'ttl': 3000}, expect=400)

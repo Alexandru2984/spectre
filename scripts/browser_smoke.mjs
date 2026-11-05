@@ -109,6 +109,12 @@ try {
   assert(!JSON.stringify(stored).includes(content));
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('#motion-btn').getAttribute('aria-pressed'), 'true');
+  for (const route of ['/about', '/privacy']) {
+    await page.goto(baseURL + route);
+    await noOverflow(route);
+    await accessibility(route);
+    assert.equal(await page.locator('h1').count(), 1);
+  }
   assert.deepEqual(errors, []);
   console.log('Browser flows passed: rooms, Unicode/XSS text, posting, reactions, filters, sorting, constellation, burn, sharing, shortcuts, themes, offline recovery, reduced motion, storage and responsive layout.');
   console.log('Axe WCAG A/AA checks passed: desktop empty/messages, information dialog, mobile dark/light.');

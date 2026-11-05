@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /healthz
+Sitemap: https://spectre.micutu.com/sitemap.xml

@@ -76,6 +76,8 @@ dispatch(Q,From,S) ->
     R=get_room(Room,S), access(R,Q),
     room_dispatch(Q#{room:=Room},From,R,S).
 
+room_dispatch(#{method:=<<"GET">>,path:=[<<"api">>,<<"snapshot">>],room:=Room}=Q,_,R,S) ->
+    {200,#{messages=>[public_message(M)||M<-room_messages(Room,S)],room=>room_view(R,S,Q),presence=>presence(Room,S)},S};
 room_dispatch(#{method:=<<"GET">>,path:=[<<"api">>,<<"messages">>],room:=Room},_,_,S) ->
     {200,[public_message(M) || M<-room_messages(Room,S)],S};
 room_dispatch(#{method:=<<"GET">>,path:=[<<"api">>,<<"stats">>]}=Q,_,R,S) -> {200,room_view(R,S,Q),S};

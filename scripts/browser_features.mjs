@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import AxeBuilder from '@axe-core/playwright';
+const base=process.env.BASE_URL || 'http://127.0.0.1:4400';
+assert(['localhost','127.0.0.1'].includes(new URL(base).hostname));
+const browser=await chromium.launch();
+const errors=[];
+async function axe(page,label){const r=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(r.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],label);}
+try {
+ const a=await browser.newContext({viewport:{width:1440,height:1000},permissions:['clipboard-read','clipboard-write']});
+ const b=await browser.newContext({viewport:{width:390,height:844}});
+ await a.setExtraHTTPHeaders({'X-Real-IP':'features-owner-'+Date.now()});await b.setExtraHTTPHeaders({'X-Real-IP':'features-reader-'+Date.now()});
+ const p=await a.newPage(),q=await b.newPage();
+ for(const page of [p,q])page.on('pageerror',e=>errors.push(e.message));
+ await p.goto(base+'/?room=features-'+Date.now());await p.locator('#connection-text').filter({hasText:'Live now'}).waitFor();
+ await p.locator('#new-room-btn').click();await p.locator('#room-input').fill('Encrypted workshop');await p.locator('#room-encrypted').check();await p.locator('#room-form button[type=submit]').click();
+ await p.locator('#room-security').filter({hasText:'E2EE'}).waitFor();
+ await p.locator('#share-room-btn').click();const invite=await p.locator('#share-url').inputValue();assert(invite.includes('#invite=')&&invite.includes('key='));
+ await axe(p,'QR invitation');await p.keyboard.press('Escape');
+ const requests=[];p.on('request',r=>{if(r.url().includes('/api/'))requests.push({url:r.url(),body:r.postData(),headers:r.headers()});});
+ await q.goto(invite);await q.locator('#connection-text').filter({hasText:'Live now'}).waitFor();assert.equal(new URL(q.url()).hash,'');
+ const secret='A secret little thought 👻 <script>alert(9)</script>';
+ await p.locator('#content-input').fill(secret);await p.locator('[data-ttl="300000"]').click();await p.locator('#send-btn').click();
+ await q.locator('#feed .message-content').filter({hasText:secret}).waitFor({timeout:8000});
+ const posted=requests.filter(r=>r.url.endsWith('/api/messages')&&r.body).map(r=>JSON.parse(r.body));
+ assert(posted[0].encrypted);assert(!posted[0].content.includes('secret little'));assert(!requests.some(r=>r.url.includes('invite=')||r.url.includes('key=')));
+ const raw=await p.evaluate(async()=>{const room=new URLSearchParams(location.search).get('room');const response=await fetch('/api/messages?room='+room);return response.status;});assert.equal(raw,403);
+ await q.locator('#feed .message-card').first().getByRole('button',{name:'Reply',exact:true}).click();await q.locator('#content-input').fill('An encrypted reply');await q.locator('#send-btn').click();
+ await p.locator('#feed .message-content').filter({hasText:'An encrypted reply'}).waitFor({timeout:8000});
+ await p.locator('#content-input').fill('Choose a secret snack');await p.locator('#kind-input').selectOption('poll');await p.locator('#poll-options').fill('Apples\nChocolate');await p.locator('#send-btn').click();
+ const poll=q.locator('#feed .message-card').filter({has:q.locator('.message-content').filter({hasText:'Choose a secret snack'})});await poll.waitFor({timeout:8000});
+ await poll.locator('.poll-choice').first().click();await p.locator('#feed .poll-meta').filter({hasText:'Votes: 1'}).waitFor({timeout:8000});
+ await q.locator('#people-btn').click();await q.locator('#alias-input').fill('A passing friend');await q.locator('#save-alias').click();
+ await p.locator('#people-btn').click();await p.locator('#participants-list').getByText('A passing friend').waitFor({timeout:8000});await p.keyboard.press('Escape');
+ await poll.getByRole('button',{name:'Report',exact:true}).click();await q.locator('#submit-report').click();
+ await p.locator('#moderate-btn').click();await p.locator('#moderator-reports .moderation-report').waitFor();await p.locator('#moderator-reports .button.danger').click();await p.keyboard.press('Escape');
+ await poll.waitFor({state:'detached',timeout:8000});
+ await q.locator('#feed .message-card').filter({has:q.locator('.message-content').filter({hasText:secret})}).getByRole('button',{name:'Hide',exact:true}).click();assert.equal(await q.locator('#feed .message-card').count(),0);
+ await q.locator('#language-input').selectOption('ro');await q.locator('#send-btn').filter({hasText:'Lasă gândul'}).waitFor();
+ await axe(q,'Romanian mobile private room');
+ assert.equal(await q.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await q.screenshot({path:'test-results/features-ro-mobile.png',fullPage:true});
+ const storage=await p.evaluate(()=>JSON.stringify({...localStorage}));assert(!storage.includes('invite')&&!storage.includes('secret')&&!storage.includes('key'));
+ await p.locator('#close-room-btn').click();await p.locator('#confirm-close-room').click();await q.locator('#room-locked:not([hidden])').waitFor({timeout:8000});assert(await q.locator('#send-btn').isDisabled());
+ assert.deepEqual(errors,[]);
+ console.log('Two-browser features passed: private invites, ciphertext-only transport, E2EE reply/poll, live presence/votes/moderation, local hide, QR, RO mobile and room closure.');
+}finally{await browser.close();}

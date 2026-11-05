@@ -66,6 +66,12 @@ fn handle_request(
       serve_asset("favicon.svg", "image/svg+xml")
     Get, ["static", "social.png"] | Head, ["static", "social.png"] ->
       serve_asset("social.png", "image/png")
+    Get, ["static", "crypto.js"] | Head, ["static", "crypto.js"] ->
+      serve_asset("crypto.js", "text/javascript; charset=utf-8")
+    Get, ["static", "qrcode.js"] | Head, ["static", "qrcode.js"] ->
+      serve_asset("qrcode.js", "text/javascript; charset=utf-8")
+    Get, ["static", "i18n.js"] | Head, ["static", "i18n.js"] ->
+      serve_asset("i18n.js", "text/javascript; charset=utf-8")
     Get, ["static", "dashboard.js"] | Head, ["static", "dashboard.js"] ->
       serve_asset("dashboard.js", "text/javascript; charset=utf-8")
     Get, ["static", "dashboard.css"] | Head, ["static", "dashboard.css"] ->

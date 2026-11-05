@@ -7,6 +7,7 @@ const baseURL = process.env.BASE_URL || 'http://127.0.0.1:4400';
 assert(['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostname), 'Use an isolated localhost server.');
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, permissions: ['clipboard-read', 'clipboard-write'] });
+await context.setExtraHTTPHeaders({'X-Real-IP':'browser-'+Date.now()});
 const page = await context.newPage();
 const errors = [];
 const room = 'browser-' + Date.now();
@@ -75,6 +76,7 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('#share-room-btn').click();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), new RegExp('room=' + room));
+  await page.keyboard.press('Escape');
   await page.locator('[data-room="ideas"]').click();
   await waitFor(async () => await page.locator('#room-label').textContent() === 'Bright ideas', 'navigate to ideas');
   await page.goBack();
@@ -98,14 +100,14 @@ try {
   await page.locator('#new-room-btn').click();
   await page.locator('#room-input').fill('new-' + room);
   await page.locator('#room-form button[type="submit"]').click();
-  assert.equal(await page.locator('#room-label').textContent(), '#new-' + room);
+  await page.locator('#room-label').filter({hasText: 'new-' + room}).waitFor();
   // Hide the native connection while time still advances, then recover.
   await context.setOffline(true);
   await page.locator('#offline-banner:not([hidden])').waitFor({ timeout: 12000 });
   await context.setOffline(false);
   await page.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor({ timeout: 15000 });
   const stored = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
-  assert(Object.keys(stored).every(key => ['spectre:theme', 'spectre:view', 'spectre:motion'].includes(key)));
+  assert(Object.keys(stored).every(key => ['spectre:theme', 'spectre:view', 'spectre:motion', 'spectre:language'].includes(key)));
   assert(!JSON.stringify(stored).includes(content));
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('#motion-btn').getAttribute('aria-pressed'), 'true');

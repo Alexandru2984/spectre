@@ -7,11 +7,14 @@ Share a thought, idea or question in a public room. Choose a lifetime, react whi
 ## Features
 
 - Public rooms and 15/30/60-minute managed events with topics, explicit opt-in discovery and owner closure.
+- Conversation, brainstorm, Q&A and team check-in templates; live owner settings for room name/topic, questions-only posting, posting pause and per-page slow mode.
 - Invitation-only private events, optionally with browser AES-256-GCM content encryption. Read, owner and encryption keys are separate; only participant keys appear in fragment invitations.
 - Thoughts, ideas, questions, threaded replies and 2–6 choice polls. Replies never outlive the parent; removing a parent/event removes dependants.
 - Three reactions, mutable anonymous poll selections, creator burn, local hide/restore, reason-based reports and capability-protected moderation.
 - Bounded live revision notifications, snapshot fallback, optional room aliases, session presence, event timers and daily prompts.
 - Local QR invitations, feed/constellation/search/filter/sort, full RO/EN controls/help/errors/information pages, mobile layout, themes, keyboard support and reduced motion.
+- Complete chronological thread views, unanswered-question filtering, sorting by replies, search through aliases/poll choices and conversation focus mode.
+- Up to 12 room drafts held only in page memory, recent-room navigation and a responsive workspace with a mobile compose shortcut. Reloading loses drafts; managed-event expiry/closure clears its draft.
 - Strict CSP, local assets, bounded OTP memory, origin/framing validation, independent expiry and dedicated read-only production identity.
 
 Public room names do not authorize access. Private invitations grant access to anyone holding them; optional E2EE protects content rather than metadata, screenshots, malicious browsers or malicious origin code. There are no authenticated identities, per-person revocation, key recovery or forward secrecy. The timer does not guarantee physical erasure. Closing/reloading loses unsaved invitation/owner/burn controls. See [privacy](https://spectre.micutu.com/privacy), [feature threat model](docs/FEATURE-PLAN.md) and [operations](docs/OPERATIONS.md).

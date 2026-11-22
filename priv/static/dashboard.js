@@ -9,7 +9,7 @@
   const reactionNames = { spark: 'Inspired', heart: 'Love', curious: 'Curious' };
   const state = {
     capabilities: new Map(), aliases: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, blocked: false, sending: false, reportRequest: 0, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
-    room: 'lobby', messages: [], burnKeys: new Map(), myReactions: new Map(),
+    room: 'lobby', messages: [], burnKeys: new Map(), myReactions: new Map(), drafts: new Map(), recentRooms: new Map(), cooldowns: new Map(), people: { count: 0, aliases: [] },
     ttl: 30000, filter: 'all', view: 'feed', paused: false, failures: 0,
     clockOffset: 0, timer: null, toastTimer: null, syncing: false, generation: 0,
     controller: null, signature: '', selectedId: null, burnId: null,
@@ -81,7 +81,7 @@
     setButtonIcon($('#theme-btn'), theme === 'dark' ? 'sun' : 'moon');
     const mobile = $('#mobile-theme-btn');
     if (mobile) { mobile.setAttribute('aria-label', $('#theme-btn').getAttribute('aria-label')); setButtonIcon(mobile, theme === 'dark' ? 'sun' : 'moon'); }
-    $('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#101412' : '#f7f8f2');
+    $('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#141619' : '#f5f6f8');
     drawCanvas();
   }
   setTheme(preference('theme') === 'light' ? 'light' : 'dark');
@@ -111,7 +111,7 @@
   $('#message-dialog').addEventListener('close', () => { state.selectedId = null; $('#message-detail').replaceChildren(); });
   $('#new-room-btn').addEventListener('click', () => { $('#room-input').value = ''; showDialog('#room-dialog'); });
   $('#room-form').addEventListener('submit', createRoom);
-  $('.room-nav').addEventListener('click', event => {
+  $('.sidebar').addEventListener('click', event => {
     const link = event.target.closest('[data-room]');
     if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault(); changeRoom(link.dataset.room, true);
@@ -125,6 +125,7 @@
   function changeRoom(room, push = false) {
     if (!roomPattern.test(room)) { toast('That room name is invalid. Welcome to the lobby.'); room = 'lobby'; }
     const oldRoom = state.room;
+    saveDraft();
     if (clientToken && state.roomMeta) fetch('/api/presence?room=' + encodeURIComponent(oldRoom), { method: 'DELETE', headers: authHeaders(), credentials: 'omit', keepalive: true }).catch(() => {});
     readInvitation(room);
     state.watchController?.abort(); state.watchController = null;
@@ -163,6 +164,7 @@
     document.title = room === 'lobby' && !new URLSearchParams(location.search).has('room') ? SpectreI18n.t('Spectre — ephemeral chat, polls and private event rooms') : name + ' · Spectre';
     $('#poll-editor').hidden = true;
     $('#kind-input').value = room === 'ideas' ? 'idea' : room === 'questions' ? 'question' : 'thought';
+    restoreDraft();
     $$('[data-filter]').forEach(button => button.setAttribute('aria-pressed', button.dataset.filter === 'all'));
     if (push) { const url = new URL(location.href); url.search = ''; url.searchParams.set('room', room); url.hash = ''; history.pushState(null, '', url); }
     $('#offline-banner').hidden = true;
@@ -219,12 +221,13 @@
     try {
       const started = Date.now();
       const { data, response } = await api(roomPath('snapshot'), { signal: controller.signal });
-      if (generation !== state.generation) return;
+      if (generation !== state.generation || state.blocked) return;
       if (!Array.isArray(data.messages) || !data.room) throw new Error('Invalid server response.');
       const serverTime = Number(response.headers.get('x-server-time'));
       if (serverTime > 0) state.clockOffset = serverTime - (started + Date.now()) / 2;
       state.messages = data.messages.filter(validMessage).filter(message => timeLeft(message) > 0);
       updateRoomMeta(data.room, data.presence);
+      restoreReplyPreview();
       state.failures = 0;
       connection('live', 'Live now');
       $('#offline-banner').hidden = true;
@@ -252,6 +255,8 @@
     for (const [id, vote] of state.myPollVotes) if (vote.expires <= timestamp) state.myPollVotes.delete(id);
     for (const [id, expires] of state.hidden) if (expires <= timestamp) state.hidden.delete(id);
     for (const [room, cap] of state.capabilities) if (cap.expires && cap.expires <= timestamp) { state.capabilities.delete(room); state.aliases.delete(room); }
+    for (const [room, draft] of state.drafts) if (draft.expires && draft.expires <= timestamp) state.drafts.delete(room);
+    for (const [room, meta] of state.recentRooms) if (meta.expires_at && meta.expires_at <= timestamp) { state.recentRooms.delete(room); state.drafts.delete(room); state.cooldowns.delete(room); }
   }
   $('#retry-btn').addEventListener('click', syncRoom);
   window.addEventListener('online', syncRoom);
@@ -271,10 +276,14 @@
     } else syncRoom();
   });
 
+  const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+  function characterCount(text) { return segmenter ? [...segmenter.segment(text)].length : [...text].length; }
   function updateCharacterCount() {
-    const count = $('#content-input').value.length;
+    const count = characterCount($('#content-input').value);
     $('#character-count').textContent = count + ' / 500';
     $('#character-count').classList.toggle('near-limit', count > 450);
+    $('#content-input').setCustomValidity(count > 500 ? SpectreI18n.t('Messages can contain up to 500 characters.') : '');
+    updateDraftNote();
   }
   $('#content-input').addEventListener('input', updateCharacterCount);
   $$('[data-ttl]').forEach(button => button.addEventListener('click', () => {
@@ -289,9 +298,10 @@
     if (!content) { feedback('Give your thought a few words first.', true); input.focus(); return; }
     if (new TextEncoder().encode(content).length > 2000) { feedback('That thought is a little too large. Keep it under 2000 UTF-8 bytes.', true); return; }
     const options = $('#kind-input').value === 'poll' ? $('#poll-options').value.split('\n').map(value => value.trim()).filter(Boolean) : [];
-    if ($('#kind-input').value === 'poll' && (options.length < 2 || options.length > 6 || new Set(options).size !== options.length || options.some(value => [...value].length > 100))) { feedback('A poll needs 2–6 distinct options of up to 100 characters.', true); return; }
+    if ($('#kind-input').value === 'poll' && (options.length < 2 || options.length > 6 || new Set(options).size !== options.length || options.some(value => characterCount(value) > 100 || new TextEncoder().encode(value).length > 400))) { feedback('A poll needs 2–6 distinct options of up to 100 characters.', true); return; }
     const room = state.room;
     const generation = state.generation;
+    const draft = currentDraft();
     state.sending = true; $('#send-btn').disabled = true;
     feedback('Leaving your thought…');
     try {
@@ -301,16 +311,24 @@
         signal: AbortSignal.timeout(10000),
       });
       if (data.message && data.burn_key) state.burnKeys.set(data.id, { key: data.burn_key, expires: data.message.expires_at });
-      if (generation !== state.generation) { toast('Your thought was sent to #' + room + '.'); return; }
-      if (input.value.trim() === content) input.value = '';
-      updateCharacterCount(); cancelReply(); $('#poll-options').value = '';
+      if (state.blocked && generation === state.generation) return;
+      if (generation !== state.generation) {
+        const saved = state.drafts.get(room);
+        if (saved && JSON.stringify(saved.value) === JSON.stringify(draft)) state.drafts.delete(room);
+        toast('Your thought was sent to #' + room + '.'); return;
+      }
+      const unchanged = JSON.stringify(currentDraft()) === JSON.stringify(draft);
+      if (unchanged) { input.value = ''; cancelReply(); $('#poll-options').value = ''; state.drafts.delete(room); }
+      if (state.roomMeta?.slow_mode_seconds && !state.roomMeta.can_moderate) state.cooldowns.set(room, now() + state.roomMeta.slow_mode_seconds * 1000);
+      updateCharacterCount();
       feedback('It’s here. For a little while.');
       if (validMessage(data.message)) { state.messages = [...state.messages.filter(message => message.id !== data.id), data.message]; render(); }
       toast('Thought shared. Let the moment happen.');
       if (!state.paused) syncRoom();
     } catch (error) {
+      if (error.status === 429) state.cooldowns.set(room, now() + error.retryAfter * 1000);
       if (generation === state.generation) feedback(error.status ? error.message + (error.status === 429 ? ' Try again in ' + error.retryAfter + 's.' : '') : 'We couldn’t confirm the send. Your draft is kept; check the room before retrying.', true);
-    } finally { state.sending = false; $('#send-btn').disabled = state.locked || Boolean(state.roomMeta?.encrypted && !capabilities().key); }
+    } finally { state.sending = false; updatePostingControls(); }
   });
   const prompts = {
     small: ['thought', 'A small thing that made today better: '],
@@ -348,9 +366,9 @@
     const query = $('#search-input').value.trim().toLocaleLowerCase();
     const sort = $('#sort-input').value;
     return state.messages.filter(message => timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(message.parent_id))
-      .filter(message => state.filter === 'all' || (state.filter === 'mine' ? state.burnKeys.has(message.id) : message.kind === state.filter))
-      .filter(message => !query || message.content.toLocaleLowerCase().includes(query))
-      .sort((a, b) => (sort === 'expiring' ? a.expires_at - b.expires_at : sort === 'reactions' ? reactionCount(b) - reactionCount(a) : b.created_at - a.created_at) || a.id.localeCompare(b.id));
+      .filter(message => state.filter === 'all' || (state.filter === 'mine' ? state.burnKeys.has(message.id) : state.filter === 'unanswered' ? message.kind === 'question' && !message.parent_id && !repliesTo(message.id).length : message.kind === state.filter))
+      .filter(message => !query || [message.content, message.author || '', ...(message.options || [])].some(text => text.toLocaleLowerCase().includes(query)))
+      .sort((a, b) => (sort === 'expiring' ? a.expires_at - b.expires_at : sort === 'reactions' ? reactionCount(b) - reactionCount(a) : sort === 'replies' ? repliesTo(b.id).length - repliesTo(a.id).length : b.created_at - a.created_at) || a.id.localeCompare(b.id));
   }
   function buildCard(message, detail = false) {
     const card = element('article', 'message-card');
@@ -390,7 +408,7 @@
       burn.addEventListener('click', () => { state.burnId = message.id; showDialog('#burn-dialog'); }); actions.append(burn);
     }
     footer.append(reactions, actions); card.append(header, content, lifetime, footer);
-    addMessageFeatures(card, message);
+    addMessageFeatures(card, message, detail);
     return card;
   }
   function render() {
@@ -406,7 +424,8 @@
     $('.starter-prompts').hidden = noMatch;
     $('#feed').hidden = state.view !== 'feed' || !messages.length;
     $('#constellation-panel').hidden = state.view !== 'constellation' || !messages.length;
-    const signature = JSON.stringify([state.view, messages, [...state.pending], [...state.myReactions], [...state.burnKeys.keys()], [...state.myPollVotes], Boolean(state.roomMeta?.can_moderate)]);
+    const thread = state.selectedId ? state.messages.filter(message => message.id === state.selectedId || message.parent_id === state.selectedId) : null;
+    const signature = JSON.stringify([state.view, messages, thread, [...state.pending], [...state.myReactions], [...state.burnKeys.keys()], [...state.myPollVotes], Boolean(state.roomMeta?.can_moderate)]);
     if (signature !== state.signature) {
       state.signature = signature;
       const focused = document.activeElement?.dataset?.focusKey;
@@ -475,14 +494,19 @@
       state.selectedId = null; $('#message-detail').replaceChildren();
     } else {
       const focused = document.activeElement?.dataset?.focusKey;
-      $('#message-detail').replaceChildren(buildCard(message, true));
+      const children = repliesTo(message.id);
+      const replies = element('div', 'thread-replies');
+      replies.append(...children.map(child => buildCard(child, true)));
+      const heading = element('h3', 'thread-heading', 'Replies (' + children.length + ')');
+      $('#message-detail').replaceChildren(buildCard(message, true), heading, replies);
+      if (!children.length) replies.append(element('p', 'dialog-note', 'No replies yet. Start the conversation.'));
       if (focused?.startsWith('detail-')) $('[data-focus-key="' + CSS.escape(focused) + '"]')?.focus({ preventScroll: true });
     }
   }
   setInterval(() => {
     const count = state.messages.length;
     state.messages = state.messages.filter(message => timeLeft(message) > 0);
-    cleanCapabilities(); tickEvent(); pruneSecondaryViews();
+    cleanCapabilities(); tickEvent(); pruneSecondaryViews(); updatePostingControls();
     if (state.replyTo && !state.messages.some(message => message.id === state.replyTo)) cancelReply();
     if (count !== state.messages.length) render(); else tickCards();
   }, 500);
@@ -633,16 +657,18 @@
     } catch (error) { $('#room-create-error').textContent = error.message; }
     finally { button.disabled = false; }
   }
-  function cancelReply() { state.replyTo = ''; $('#reply-context').hidden = true; $('#reply-preview').textContent = ''; }
+  function cancelReply() { state.replyTo = ''; $('#reply-context').hidden = true; $('#reply-preview').textContent = ''; updatePostingControls(); }
   $('#cancel-reply').addEventListener('click', cancelReply);
   $('#kind-input').addEventListener('change', () => { $('#poll-editor').hidden = $('#kind-input').value !== 'poll'; });
   function replyTo(message) {
     const parent = message.parent_id ? state.messages.find(item => item.id === message.parent_id) : message;
     if (!parent || timeLeft(parent) <= 0) { toast('That conversation has ended.'); return; }
     state.replyTo = parent.id; $('#reply-preview').textContent = parent.content.slice(0, 120); $('#reply-context').hidden = false;
+    updatePostingControls();
     $('#message-dialog').close(); $('#content-input').focus(); $('#content-input').scrollIntoView({ block: 'center', behavior: 'auto' });
   }
-  function addMessageFeatures(card, message) {
+  function repliesTo(id) { return state.messages.filter(message => message.parent_id === id && timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(id)).sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)); }
+  function addMessageFeatures(card, message, detail = false) {
     const content = $('.message-content', card); content.dataset.untranslated = '';
     if (message.decrypt_error) content.classList.add('decrypt-error');
     if (message.author) { const author = element('span', 'card-author', message.author); author.dataset.untranslated = ''; $('.card-top', card).insertBefore(author, $('.card-age', card)); }
@@ -658,16 +684,16 @@
         const votes = Number(message.poll_counts?.[index]) || 0;
         const total = Number(message.poll_total) || 0;
         button.append(label, element('span', '', votes + ' · ' + (total ? Math.round(votes * 100 / total) : 0) + '%'));
-        button.disabled = state.pending.has(message.id); button.dataset.focusKey = message.id + '-poll-' + index;
+        button.disabled = state.pending.has(message.id); button.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-poll-' + index;
         button.addEventListener('click', () => vote(message, index)); poll.append(button);
       }
       poll.append(element('span', 'poll-meta', 'Votes: ' + message.poll_total)); content.after(poll);
     }
     const tools = element('div', 'message-tools');
-    function action(label, callback) { const button = element('button', 'text-button', label); button.type = 'button'; button.addEventListener('click', callback); tools.append(button); }
+    function action(label, callback) { const button = element('button', 'text-button', label); button.type = 'button'; button.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-tool-' + tools.children.length; button.addEventListener('click', callback); tools.append(button); }
     action('Reply', () => replyTo(message));
-    const children = state.messages.filter(item => item.parent_id === message.id && timeLeft(item) > 0);
-    if (!message.parent_id && children.length) action('Thread (' + children.length + ')', () => openMessage(message.id));
+    const children = repliesTo(message.id);
+    if (!message.parent_id && !detail) action(children.length ? 'Thread (' + children.length + ')' : 'Open thread', () => openMessage(message.id));
     action('Hide', () => { state.hidden.set(message.id, message.expires_at); if ($('#message-dialog').open) $('#message-dialog').close(); render(); });
     action('Report', () => { state.reportId = message.id; showDialog('#report-dialog'); });
     if (state.roomMeta?.can_moderate && !state.burnKeys.has(message.id)) action('Remove', () => removeAsModerator(message.id));
@@ -740,21 +766,24 @@
     catch (error) { toast(error.message); }
   });
   function lockRoom(message) {
+    for (const item of state.messages) { state.burnKeys.delete(item.id); state.myReactions.delete(item.id); state.myPollVotes.delete(item.id); state.hidden.delete(item.id); }
+    state.alias = '';
+    state.drafts.delete(state.room); state.recentRooms.delete(state.room); state.cooldowns.delete(state.room); state.capabilities.delete(state.room); state.aliases.delete(state.room);
     state.locked = true; state.blocked = true; state.messages = []; state.roomMeta = null; cancelReply(); state.watchController?.abort(); state.controller?.abort();
     $$('dialog[open]').forEach(dialog => dialog.close());
     $('#participants-list').replaceChildren(); $('#alias-input').value = ''; $('#poll-options').value = ''; $('#content-input').value = ''; updateCharacterCount();
     clearTimeout(state.timer); clearTimeout(state.presenceTimer); clearTimeout(state.watchRetry);
     $('#room-locked').textContent = message; $('#room-locked').hidden = false; $('#send-btn').disabled = true;
-    $('#close-room-btn').hidden = true; connection('error', 'Room unavailable'); document.body.classList.add('event-ended'); render();
+    $('#close-room-btn').hidden = true; $('#room-settings-btn').hidden = true; $('#room-topic').textContent = ''; $('#room-topic').hidden = true; $('#posting-policy').hidden = true; renderRecentRooms(); connection('error', 'Room unavailable'); document.body.classList.add('event-ended'); render();
   }
   function updateRoomMeta(meta, people) {
-    state.roomMeta = meta; state.locked = false; state.revision = meta.revision;
+    state.roomMeta = meta; state.people = people; state.locked = false; state.revision = meta.revision;
     const cap = capabilities();
     if (meta.expires_at) state.capabilities.set(state.room, { ...cap, expires: meta.expires_at });
     const missingKey = meta.encrypted && !cap.key;
     $('#room-locked').hidden = !missingKey;
     if (missingKey) $('#room-locked').textContent = 'Encryption key missing. Open the complete invitation to send or read encrypted text.';
-    $('#send-btn').disabled = state.sending || missingKey;
+    updatePostingControls();
     document.body.classList.remove('event-ended');
     $('#room-label').textContent = knownRooms[meta.id] || meta.name;
     for (const node of [$('#room-label'), $('#room-crumb')]) { if (knownRooms[meta.id]) delete node.dataset.untranslated; else node.dataset.untranslated = ''; }
@@ -763,6 +792,11 @@
     $('.public-tag').textContent = meta.private ? 'PRIVATE ROOM' : 'PUBLIC ROOM';
     $('#compose-privacy').replaceChildren(icon(meta.private ? 'ghost' : 'globe'), document.createTextNode(meta.encrypted ? 'Message text is encrypted in your browser. Invitation holders can read it.' : meta.private ? 'Invitation holders can read this room. Text is processed by the server.' : 'Public by design. Share thoughts, never secrets.'));
     $('#close-room-btn').hidden = !meta.is_owner;
+    $('#room-settings-btn').hidden = !meta.is_owner;
+    $('#room-topic').textContent = meta.topic || ''; $('#room-topic').hidden = !meta.topic;
+    state.recentRooms.delete(meta.id); state.recentRooms.set(meta.id, { name: meta.name, expires_at: meta.expires_at });
+    while (state.recentRooms.size > 12) state.recentRooms.delete(state.recentRooms.keys().next().value);
+    renderRecentRooms();
     $('#presence-count').textContent = people.count + ' active sessions';
     $('#participants-list').replaceChildren(...people.aliases.map(alias => { const node = element('li', '', alias); node.dataset.untranslated = ''; return node; }));
     if (!people.aliases.length) $('#participants-list').append(element('li', '', 'No aliases shared.'));
@@ -840,6 +874,110 @@
     if (cap.access) headers['x-room-key'] = cap.access;
     if (cap.owner) headers['x-moderator-key'] = cap.owner;
     return headers;
+  }
+
+  function currentDraft() {
+    return { content: $('#content-input').value, options: $('#poll-options').value, kind: $('#kind-input').value, ttl: state.ttl, replyTo: state.replyTo };
+  }
+  function updateDraftNote(restored = false) {
+    const hasDraft = Boolean($('#content-input').value || $('#poll-options').value);
+    const text = hasDraft ? (restored ? 'Draft restored · only in this tab' : 'Draft stays in this tab · lost on reload') : '';
+    if ($('#draft-note').textContent !== SpectreI18n.t(text)) $('#draft-note').textContent = text;
+    $('#clear-draft-btn').hidden = !hasDraft;
+  }
+  function saveDraft() {
+    if (state.blocked) return;
+    const value = currentDraft();
+    if (!value.content && !value.options) { state.drafts.delete(state.room); return; }
+    state.drafts.delete(state.room);
+    state.drafts.set(state.room, { value, expires: state.roomMeta?.expires_at || capabilities().expires || 0 });
+    while (state.drafts.size > 12) state.drafts.delete(state.drafts.keys().next().value);
+  }
+  function restoreDraft() {
+    const saved = state.drafts.get(state.room);
+    const draft = saved && (!saved.expires || saved.expires > now()) ? saved.value : null;
+    $('#poll-options').value = draft?.options || '';
+    if (draft) {
+      $('#content-input').value = draft.content; $('#kind-input').value = draft.kind;
+      state.ttl = draft.ttl; state.replyTo = draft.replyTo;
+    }
+    $('#poll-editor').hidden = $('#kind-input').value !== 'poll';
+    $$('[data-ttl]').forEach(button => button.setAttribute('aria-pressed', Number(button.dataset.ttl) === state.ttl));
+    updateCharacterCount(); updateDraftNote(Boolean(draft));
+  }
+  function restoreReplyPreview() {
+    if (!state.replyTo) return;
+    const parent = state.messages.find(message => message.id === state.replyTo && timeLeft(message) > 0);
+    if (!parent) { cancelReply(); return; }
+    $('#reply-preview').textContent = parent.content.slice(0, 120); $('#reply-context').hidden = false;
+  }
+  $('#poll-options').addEventListener('input', () => updateDraftNote());
+  $('#clear-draft-btn').addEventListener('click', () => {
+    state.drafts.delete(state.room); $('#content-input').value = ''; $('#poll-options').value = ''; cancelReply(); updateCharacterCount(); $('#content-input').focus();
+  });
+  function renderRecentRooms() {
+    const rooms = [...state.recentRooms].reverse().filter(([room, meta]) => room !== state.room && !Object.hasOwn(knownRooms, room) && (!meta.expires_at || meta.expires_at > now())).slice(0, 6);
+    $('#session-rooms').hidden = !rooms.length;
+    $('#session-rooms').replaceChildren(...rooms.map(([room, meta]) => {
+      const link = element('a', 'room-link'); link.href = (SpectreI18n.language === 'ro' ? '/ro' : '/') + '?room=' + encodeURIComponent(room); link.dataset.room = room;
+      const name = element('span', '', meta.name); name.dataset.untranslated = ''; link.append(icon('hash'), name); return link;
+    }));
+  }
+  function updatePostingControls() {
+    const meta = state.roomMeta;
+    const onlyQuestions = meta?.posting_mode === 'questions' && !meta.can_moderate && !state.replyTo;
+    for (const option of $('#kind-input').options) option.disabled = onlyQuestions && option.value !== 'question';
+    if (onlyQuestions && $('#kind-input').value !== 'question') { $('#kind-input').value = 'question'; $('#poll-editor').hidden = true; }
+    const remaining = Math.max(0, Math.ceil(((state.cooldowns.get(state.room) || 0) - now()) / 1000));
+    const paused = meta?.posting_mode === 'paused' && !meta.can_moderate;
+    $('#send-btn').disabled = state.locked || state.sending || Boolean(meta?.encrypted && !capabilities().key) || paused || remaining > 0;
+    const label = remaining ? 'Wait ' + remaining + 's' : 'Let it go';
+    if ($('#send-btn span').textContent !== SpectreI18n.t(label)) $('#send-btn span').textContent = label;
+    const policy = meta?.posting_mode === 'paused' ? 'The host has paused new messages.' : meta?.posting_mode === 'questions' ? 'Questions and replies only.' : '';
+    const slow = meta?.slow_mode_seconds ? 'Slow mode: ' + meta.slow_mode_seconds + 's between messages.' : '';
+    const text = [policy && SpectreI18n.t(policy), slow && SpectreI18n.t(slow)].filter(Boolean).join(' ');
+    $('#posting-policy').hidden = !text;
+    if ($('#posting-policy').textContent !== text) $('#posting-policy').textContent = text;
+  }
+  $('#room-settings-btn').addEventListener('click', () => {
+    const meta = state.roomMeta; if (!meta?.is_owner) return;
+    $('#settings-name').value = meta.name; $('#settings-topic').value = meta.topic;
+    $('#settings-mode').value = meta.posting_mode || 'open'; $('#settings-slow').value = String(meta.slow_mode_seconds || 0);
+    $('#settings-feedback').textContent = ''; showDialog('#room-settings-dialog');
+  });
+  $('#room-settings-dialog').addEventListener('close', () => { $('#settings-name').value = ''; $('#settings-topic').value = ''; $('#settings-feedback').textContent = ''; });
+  $('#room-settings-form').addEventListener('submit', async event => {
+    event.preventDefault(); const button = $('#room-settings-form button[type=submit]'); if (button.disabled) return;
+    button.disabled = true; const generation = state.generation;
+    try {
+      const { data } = await api(roomPath('room'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#settings-name').value.trim(), topic: $('#settings-topic').value.trim(), posting_mode: $('#settings-mode').value, slow_mode_seconds: Number($('#settings-slow').value) }), signal: AbortSignal.timeout(10000) });
+      if (generation !== state.generation || state.locked) return;
+      updateRoomMeta(data, state.people); $('#room-settings-dialog').close(); toast('Room settings updated.');
+    } catch (error) { if (generation === state.generation && $('#room-settings-dialog').open) $('#settings-feedback').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  const templates = {
+    conversation: ['A conversation', 'What is on your mind?', 30],
+    brainstorm: ['Brainstorm', 'Share an idea, build on a reply, vote for a favourite.', 30],
+    questions: ['Ask me anything', 'Ask a question. Reply while the room is here.', 60],
+    checkin: ['Team check-in', 'One win, one challenge, one thing you need.', 15],
+  };
+  $$('[data-template]').forEach(button => button.addEventListener('click', () => {
+    const [name, topic, minutes] = templates[button.dataset.template];
+    $('#room-input').value = SpectreI18n.t(name); $('#room-topic-input').value = SpectreI18n.t(topic); $('#room-duration').value = String(minutes);
+    $$('[data-template]').forEach(item => item.setAttribute('aria-pressed', item === button));
+  }));
+  $('#focus-btn').addEventListener('click', () => {
+    const focused = document.body.classList.toggle('focus-mode');
+    $('#focus-btn').setAttribute('aria-pressed', focused);
+    $('#focus-btn').setAttribute('aria-label', focused ? 'Leave conversation focus' : 'Focus on the conversation');
+    resizeCanvas(); drawCanvas();
+  });
+  $('#mobile-compose-btn').addEventListener('click', () => {
+    $('.composer').scrollIntoView({ block: 'start', behavior: 'auto' }); $('#content-input').focus({ preventScroll: true });
+  });
+  if (typeof IntersectionObserver === 'function') {
+    new IntersectionObserver(entries => { $('#mobile-compose-btn').hidden = entries[0].isIntersecting; }, { threshold: 0.1 }).observe($('.composer'));
   }
 
   const initialRoom = new URLSearchParams(location.search).get('room') || 'lobby';

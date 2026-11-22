@@ -1,0 +1,132 @@
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { chromium } from 'playwright';
+import AxeBuilder from '@axe-core/playwright';
+
+const base = process.env.BASE_URL || 'http://127.0.0.1:4400';
+assert(['localhost', '127.0.0.1'].includes(new URL(base).hostname), 'Use an isolated server.');
+const browser = await chromium.launch();
+const errors = [];
+async function axe(page, label) {
+  const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+  assert.deepEqual(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], label);
+}
+async function until(page, check, label, timeout = 8000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) { if (await check()) return; await page.waitForTimeout(100); }
+  assert.fail(label);
+}
+try {
+  await mkdir('test-results', { recursive: true });
+  const owner = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const reader = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await owner.setExtraHTTPHeaders({ 'X-Real-IP': 'product-owner-' + Date.now() });
+  await reader.setExtraHTTPHeaders({ 'X-Real-IP': 'product-reader-' + Date.now() });
+  const p = await owner.newPage(), q = await reader.newPage();
+  for (const page of [p, q]) page.on('pageerror', error => errors.push(error.message));
+  const legacyRoom = 'product-' + Date.now();
+  await p.goto(base + '/?room=' + legacyRoom);
+  await p.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
+  await p.locator('#content-input').fill('👻'.repeat(500));
+  assert.equal(await p.locator('#character-count').textContent(), '500 / 500');
+  assert(await p.locator('#content-input').evaluate(node => node.checkValidity()));
+  await p.locator('#content-input').fill('A draft for this room only');
+  await p.locator('#kind-input').selectOption('poll');
+  await p.locator('#poll-options').fill('One\nTwo');
+  await p.locator('[data-ttl="300000"]').click();
+  await p.locator('[data-room="ideas"]').first().click();
+  await p.locator('#room-label').filter({ hasText: 'Bright ideas' }).waitFor();
+  assert.equal(await p.locator('#content-input').inputValue(), '');
+  assert.equal(await p.locator('#poll-options').inputValue(), '');
+  await p.locator('#session-rooms [data-room="' + legacyRoom + '"]').click();
+  await p.locator('#room-label').filter({ hasText: legacyRoom }).waitFor();
+  assert.equal(await p.locator('#content-input').inputValue(), 'A draft for this room only');
+  assert.equal(await p.locator('#poll-options').inputValue(), 'One\nTwo');
+  assert.equal(await p.locator('#kind-input').inputValue(), 'poll');
+  assert.equal(await p.locator('[data-ttl="300000"]').getAttribute('aria-pressed'), 'true');
+  await p.locator('#clear-draft-btn').click();
+
+  await p.locator('#new-room-btn').click();
+  await p.locator('#room-private').check();
+  await p.locator('[data-template="questions"]').click();
+  assert(await p.locator('#room-private').isChecked(), 'Templates preserve privacy choices');
+  assert.equal(await p.locator('#room-duration').inputValue(), '60');
+  await p.locator('#room-form button[type=submit]').click();
+  await p.locator('#room-settings-btn:not([hidden])').waitFor();
+  await p.locator('#share-room-btn').click();
+  const invite = await p.locator('#share-url').inputValue();
+  await p.keyboard.press('Escape');
+  await q.goto(invite);
+  await q.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
+  assert.equal(await q.locator('#room-settings-btn').isVisible(), false);
+  await p.locator('#room-settings-btn').click();
+  const topic = '<img src=x onerror="window.pwned=true"> Ask a question';
+  await p.locator('#settings-name').fill('Questions live');
+  await p.locator('#settings-topic').fill(topic);
+  await p.locator('#settings-mode').selectOption('questions');
+  await p.locator('#settings-slow').selectOption('5');
+  await axe(p, 'Owner room settings');
+  await p.locator('#room-settings-form button[type=submit]').click();
+  await q.locator('#room-topic').filter({ hasText: topic }).waitFor();
+  assert.equal(await q.locator('#kind-input').inputValue(), 'question');
+  assert.equal(await q.locator('#room-topic img').count(), 0);
+  assert.equal(await q.evaluate(() => window.pwned), undefined);
+  await q.locator('#content-input').fill('Can a short conversation still be useful?');
+  await q.locator('[data-ttl="300000"]').click();
+  await q.locator('#send-btn').click();
+  await q.locator('#feed .message-card').first().waitFor();
+  assert(await q.locator('#send-btn').isDisabled(), 'Cooldown reflected in composer');
+  await p.locator('#feed .message-card').first().waitFor();
+  await p.locator('[data-filter="unanswered"]').click();
+  assert.equal(await p.locator('#feed .message-card').count(), 1);
+  await p.locator('#feed .message-card').first().getByRole('button', { name: 'Reply', exact: true }).click();
+  await p.locator('#content-input').fill('Yes. Start with one useful question.');
+  await p.locator('[data-ttl="300000"]').click();
+  await p.locator('#send-btn').click();
+  await until(p, async () => await p.locator('#feed .message-card').count() === 0, 'Answered questions leave the unanswered filter');
+  await p.locator('[data-filter="all"]').click();
+  await p.locator('#feed').getByRole('button', { name: 'Thread (1)', exact: true }).click();
+  await p.locator('#message-dialog[open]').waitFor();
+  assert.equal(await p.locator('#message-detail .message-card').count(), 2);
+  assert.equal(await p.locator('#message-detail .thread-replies .message-content').textContent(), 'Yes. Start with one useful question.');
+  await axe(p, 'Complete conversation thread');
+  await p.keyboard.press('Escape');
+  await p.locator('#focus-btn').click();
+  assert.equal(await p.locator('.hero').isVisible(), false);
+  await p.evaluate(() => { document.activeElement?.blur(); scrollTo(0, 0); });
+  await p.screenshot({ path: 'test-results/product-desktop-focus.png', fullPage: true });
+  await p.locator('#focus-btn').click();
+
+  await p.locator('#room-settings-btn').click();
+  await p.locator('#settings-mode').selectOption('paused');
+  await p.locator('#room-settings-form button[type=submit]').click();
+  await q.locator('#posting-policy').filter({ hasText: 'paused' }).waitFor();
+  assert(await q.locator('#send-btn').isDisabled());
+  await q.locator('#content-input').fill('A draft while the room is paused');
+  await p.locator('#room-settings-btn').click();
+  await p.locator('#settings-mode').selectOption('open');
+  await p.locator('#settings-slow').selectOption('0');
+  await p.locator('#room-settings-form button[type=submit]').click();
+  await until(q, async () => await q.locator('#send-btn').isEnabled(), 'Room resumes live');
+  assert.equal(await q.locator('#content-input').inputValue(), 'A draft while the room is paused');
+  for (const width of [320, 360, 390, 768, 1440]) {
+    await q.setViewportSize({ width, height: 900 });
+    assert.equal(await q.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'No overflow at ' + width);
+  }
+  await q.setViewportSize({ width: 390, height: 844 });
+  await q.locator('#language-input').selectOption('ro');
+  await axe(q, 'Product Romanian mobile');
+  await q.evaluate(() => { document.activeElement?.blur(); scrollTo(0, 0); });
+  await p.evaluate(() => { document.activeElement?.blur(); scrollTo(0, 0); });
+  await q.screenshot({ path: 'test-results/product-mobile.png', fullPage: true });
+  await p.screenshot({ path: 'test-results/product-desktop.png', fullPage: true });
+  const storage = await q.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  assert(!storage.includes('draft') && !storage.includes('invite') && !storage.includes('Questions live'));
+  await p.locator('#close-room-btn').click();
+  await p.locator('#confirm-close-room').click();
+  await q.locator('#room-locked:not([hidden])').waitFor();
+  assert.equal(await q.locator('#content-input').inputValue(), '', 'Closure clears active draft');
+  assert.equal(await q.locator('#room-topic').textContent(), '', 'Closure clears room topic');
+  assert.deepEqual(errors, []);
+  console.log('Product browser checks passed: templates, private recent rooms, Unicode counts, isolated memory drafts, live owner policies/cooldowns, unanswered questions, complete threads, focus and 320–1440px layouts.');
+} finally { await browser.close(); }

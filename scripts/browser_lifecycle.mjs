@@ -76,6 +76,30 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await page.locator('#moderator-reports').textContent(), '', 'Obsolete report cannot repopulate a new room');
   assert.equal(await page.locator('#moderator-key').inputValue(), '');
+  await page.unroute('**/api/reports?*');
+
+  // Decryption can finish after fetch has completed and its signal is aborted.
+  // An obsolete snapshot must never reopen a room closed by a live notification.
+  const closing = await post('/api/rooms', { name: 'Delayed snapshot', minutes: 15 });
+  await post('/api/messages', { room: closing.room.id, content: 'Must not reappear after closure', ttl: 300000 });
+  await page.goto(base + '/?room=' + closing.room.id);
+  await page.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
+  await page.evaluate(() => {
+    const decrypt = window.SpectreCrypto.decrypt;
+    const gate = new Promise(resolve => { window.releaseSnapshot = resolve; });
+    window.SpectreCrypto.decrypt = async (...args) => {
+      window.snapshotDecoding = true; await gate; return decrypt(...args);
+    };
+    document.querySelector('#retry-btn').click();
+  });
+  await until(async () => await page.evaluate(() => window.snapshotDecoding), 'Snapshot is held during decoding');
+  const closed = await context.request.delete(base + '/api/room?room=' + closing.room.id, { headers: { 'X-Moderator-Key': closing.owner_key } });
+  assert(closed.ok());
+  await page.locator('#room-locked:not([hidden])').waitFor();
+  await page.evaluate(() => window.releaseSnapshot());
+  await page.waitForTimeout(300);
+  assert(await page.locator('#send-btn').isDisabled());
+  assert.equal(await page.locator('#feed .message-card').count(), 0, 'Late decoded snapshot cannot restore closed-room content');
   assert.deepEqual(errors, []);
-  console.log('Lifecycle regressions passed: initial reconnect, paused burn cascade, report expiry and obsolete dialog responses.');
+  console.log('Lifecycle regressions passed: initial reconnect, paused burn cascade, report expiry, obsolete dialogs and decoded snapshots after closure.');
 } finally { await browser.close(); }

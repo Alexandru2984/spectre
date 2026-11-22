@@ -4,18 +4,18 @@
   <rect x="64" y="55" width="42" height="46" rx="5" fill="none" stroke="#ffb36b"/>
   <g transform="translate(72 62) scale(1.15)" fill="none" stroke="#ffb36b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V10a8 8 0 0 1 16 0v11l-4-3-4 3-4-3-4 3Z"/><path d="M9 10v2m6-2v2"/></g>
   <text x="121" y="90" fill="#f2f4f7" font-family="sans-serif" font-size="38" font-weight="700" letter-spacing="-1.5">spectre<tspan fill="#ffb36b">.</tspan></text>
-  <text x="64" y="172" fill="#ffb36b" font-family="monospace" font-size="15" letter-spacing="2">LIVE ROOMS. NO BACKLOG.</text>
-  <text x="59" y="273" fill="#f2f4f7" font-family="sans-serif" font-size="84" font-weight="650" letter-spacing="-4">Talk. Vote.</text>
-  <text x="59" y="369" fill="#ffb36b" font-family="sans-serif" font-size="84" font-weight="650" letter-spacing="-4">Move on.</text>
-  <text x="64" y="438" fill="#b0b8c4" font-family="sans-serif" font-size="22">A conversation that ends. No account needed.</text>
+  <text x="64" y="172" fill="#ffb36b" font-family="monospace" font-size="15" letter-spacing="2">TEMPORARY CHAT ROOMS</text>
+  <text x="59" y="267" fill="#f2f4f7" font-family="sans-serif" font-size="68" font-weight="650" letter-spacing="-4">Temporary</text>
+  <text x="59" y="369" fill="#ffb36b" font-family="sans-serif" font-size="68" font-weight="650" letter-spacing="-4">chat rooms.</text>
+  <text x="64" y="438" fill="#b0b8c4" font-family="sans-serif" font-size="22">Messages expire within five minutes.</text>
   <rect x="746" y="153" width="390" height="307" rx="6" fill="#1c1f24" stroke="#353b45"/>
-  <text x="772" y="195" fill="#ffb36b" font-family="monospace" font-size="14">YOUR ROOM / YOUR MOMENT</text>
+  <text x="772" y="195" fill="#ffb36b" font-family="monospace" font-size="14">SPECTRE / ROOMS</text>
   <path d="M772 218h338" stroke="#353b45"/>
-  <text x="772" y="264" fill="#f2f4f7" font-family="sans-serif" font-size="26">One good question.</text>
-  <text x="772" y="310" fill="#b0b8c4" font-family="sans-serif" font-size="18">Replies. Live polls. Private invitations.</text>
+  <text x="772" y="264" fill="#f2f4f7" font-family="sans-serif" font-size="26">Messages and polls</text>
+  <text x="772" y="310" fill="#b0b8c4" font-family="sans-serif" font-size="18">Public or invitation-only rooms.</text>
   <path d="M772 354h338" stroke="#353b45" stroke-width="4"/>
   <path d="M772 354h214" stroke="#ffb36b" stroke-width="4"/>
-  <text x="772" y="409" fill="#b0b8c4" font-family="monospace" font-size="16">HERE FOR UP TO 5 MINUTES</text>
+  <text x="772" y="409" fill="#b0b8c4" font-family="monospace" font-size="16">No account required</text>
   <text x="64" y="578" fill="#b0b8c4" font-family="monospace" font-size="17">spectre.micutu.com</text>
   <text x="1136" y="578" fill="#b0b8c4" font-family="monospace" font-size="15" text-anchor="end">EN / RO</text>
 </svg>

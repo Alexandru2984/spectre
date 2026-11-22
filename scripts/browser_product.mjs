@@ -1,3 +1,4 @@
+import { openRoomTool } from './browser_helpers.mjs';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
@@ -35,7 +36,7 @@ try {
   await p.locator('#poll-options').fill('One\nTwo');
   await p.locator('[data-ttl="300000"]').click();
   await p.locator('[data-room="ideas"]').first().click();
-  await p.locator('#room-label').filter({ hasText: 'Bright ideas' }).waitFor();
+  await p.locator('#room-label').filter({ hasText: 'Ideas' }).waitFor();
   assert.equal(await p.locator('#content-input').inputValue(), '');
   assert.equal(await p.locator('#poll-options').inputValue(), '');
   await p.locator('#session-rooms [data-room="' + legacyRoom + '"]').click();
@@ -52,14 +53,14 @@ try {
   assert(await p.locator('#room-private').isChecked(), 'Templates preserve privacy choices');
   assert.equal(await p.locator('#room-duration').inputValue(), '60');
   await p.locator('#room-form button[type=submit]').click();
-  await p.locator('#room-settings-btn:not([hidden])').waitFor();
+  await p.locator('#room-settings-btn:not([hidden])').waitFor({ state: 'attached' });
   await p.locator('#share-room-btn').click();
   const invite = await p.locator('#share-url').inputValue();
   await p.keyboard.press('Escape');
   await q.goto(invite);
   await q.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
-  assert.equal(await q.locator('#room-settings-btn').isVisible(), false);
-  await p.locator('#room-settings-btn').click();
+  assert.equal(await q.locator('#room-settings-btn').getAttribute('hidden') !== null, true);
+  await openRoomTool(p, '#room-settings-btn');
   const topic = '<img src=x onerror="window.pwned=true"> Ask a question';
   await p.locator('#settings-name').fill('Questions live');
   await p.locator('#settings-topic').fill(topic);
@@ -95,18 +96,18 @@ try {
   await axe(p, 'Complete conversation thread');
   await p.keyboard.press('Escape');
   await p.locator('#focus-btn').click();
-  assert.equal(await p.locator('.hero').isVisible(), false);
+  assert.equal(await p.locator('.product-context').isVisible(), false);
   await p.evaluate(() => { document.activeElement?.blur(); scrollTo(0, 0); });
   await p.screenshot({ path: 'test-results/product-desktop-focus.png', fullPage: true });
   await p.locator('#focus-btn').click();
 
-  await p.locator('#room-settings-btn').click();
+  await openRoomTool(p, '#room-settings-btn');
   await p.locator('#settings-mode').selectOption('paused');
   await p.locator('#room-settings-form button[type=submit]').click();
   await q.locator('#posting-policy').filter({ hasText: 'paused' }).waitFor();
   assert(await q.locator('#send-btn').isDisabled());
   await q.locator('#content-input').fill('A draft while the room is paused');
-  await p.locator('#room-settings-btn').click();
+  await openRoomTool(p, '#room-settings-btn');
   await p.locator('#settings-mode').selectOption('open');
   await p.locator('#settings-slow').selectOption('0');
   await p.locator('#room-settings-form button[type=submit]').click();
@@ -125,7 +126,7 @@ try {
   await p.screenshot({ path: 'test-results/product-desktop.png', fullPage: true });
   const storage = await q.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   assert(!storage.includes('draft') && !storage.includes('invite') && !storage.includes('Questions live'));
-  await p.locator('#close-room-btn').click();
+  await openRoomTool(p, '#close-room-btn');
   await p.locator('#confirm-close-room').click();
   await q.locator('#room-locked:not([hidden])').waitFor();
   assert.equal(await q.locator('#content-input').inputValue(), '', 'Closure clears active draft');

@@ -1,3 +1,4 @@
+import { openRoomTool } from './browser_helpers.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -42,7 +43,7 @@ try {
   await post('/api/messages', { room, content: 'Child must disappear immediately', ttl: 300000, parent_id: parent.id });
   await page.locator('#feed .message-card').nth(1).waitFor();
   await page.locator('#pause-btn').click();
-  await page.getByRole('button', { name: 'Burn your message', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete your message', exact: true }).click();
   await page.locator('#confirm-burn').click();
   await until(async () => await page.locator('#feed .message-card').count() === 0, 'Burn cascades while paused');
 
@@ -52,7 +53,7 @@ try {
   await post('/api/messages/' + message.id + '/report?room=' + eventRoom, { reason: 'spam' });
   await page.goto(base + '/?room=' + eventRoom);
   await page.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
-  await page.locator('#moderate-btn').click();
+  await openRoomTool(page, '#moderate-btn');
   await page.locator('#moderator-key').fill(event.owner_key);
   await page.locator('#load-reports').click();
   await page.locator('#moderator-reports .moderation-report').waitFor();
@@ -68,11 +69,11 @@ try {
   await page.route('**/api/reports?*', async route => {
     const response = await route.fetch(); reached(); await gate; await route.fulfill({ response });
   });
-  await page.locator('#moderate-btn').click();
+  await openRoomTool(page, '#moderate-btn');
   await intercepted;
   await page.evaluate(() => document.querySelector('[data-room="ideas"]').click());
   release();
-  await page.locator('#room-label').filter({ hasText: 'Bright ideas' }).waitFor();
+  await page.locator('#room-label').filter({ hasText: 'Ideas' }).waitFor();
   await page.waitForTimeout(300);
   assert.equal(await page.locator('#moderator-reports').textContent(), '', 'Obsolete report cannot repopulate a new room');
   assert.equal(await page.locator('#moderator-key').inputValue(), '');

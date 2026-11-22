@@ -1,3 +1,4 @@
+import { openRoomTool } from './browser_helpers.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
@@ -33,11 +34,11 @@ try {
  await q.locator('#people-btn').click();await q.locator('#alias-input').fill('A passing friend');await q.locator('#save-alias').click();
  await p.locator('#people-btn').click();await p.locator('#participants-list').getByText('A passing friend').waitFor({timeout:8000});await p.keyboard.press('Escape');
  await poll.getByRole('button',{name:'Report',exact:true}).click();await q.locator('#submit-report').click();
- await p.locator('#moderate-btn').click();await p.locator('#moderator-reports .moderation-report').waitFor();await p.locator('#moderator-reports .button.danger').click();await p.keyboard.press('Escape');
+ await openRoomTool(p, '#moderate-btn');await p.locator('#moderator-reports .moderation-report').waitFor();await p.locator('#moderator-reports .button.danger').click();await p.keyboard.press('Escape');
  await poll.waitFor({state:'detached',timeout:8000});
  await q.locator('#language-input').selectOption('ro');assert.equal(await q.locator('#feed .message-content').filter({hasText:'Good thoughts.'}).textContent(),'Good thoughts.');await q.locator('#language-input').selectOption('en');
  await q.locator('#feed .message-card').filter({has:q.locator('.message-content').filter({hasText:secret})}).getByRole('button',{name:'Hide',exact:true}).click();assert.equal(await q.locator('#feed .message-card').count(),0);
- await q.locator('#language-input').selectOption('ro');await q.locator('#send-btn').filter({hasText:'Lasă gândul'}).waitFor();
+ await q.locator('#language-input').selectOption('ro');await q.locator('#send-btn').filter({hasText:'Trimite mesajul'}).waitFor();
  await axe(q,'Romanian mobile private room');
  assert.equal(await q.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await q.screenshot({path:'test-results/features-ro-mobile.png',fullPage:true});
@@ -49,7 +50,7 @@ try {
  const encryptedPosts=requests.filter(r=>r.url.endsWith('/api/messages')&&r.body).map(r=>JSON.parse(r.body));assert(new Set(encryptedPosts.map(x=>JSON.parse(x.content).iv)).size===encryptedPosts.length);
  assert(!JSON.stringify(requests).includes(originalKey));
  await bad.close();await plain.close();
- await p.locator('#close-room-btn').click();await p.locator('#confirm-close-room').click();await q.locator('#room-locked:not([hidden])').waitFor({timeout:8000});assert(await q.locator('#send-btn').isDisabled());
+ await openRoomTool(p, '#close-room-btn');await p.locator('#confirm-close-room').click();await q.locator('#room-locked:not([hidden])').waitFor({timeout:8000});assert(await q.locator('#send-btn').isDisabled());
  assert.deepEqual(errors,[]);
  console.log('Two-browser features passed: private invites, ciphertext-only transport, E2EE reply/poll, live presence/votes/moderation, local hide, QR, RO mobile and room closure.');
 }finally{await browser.close();}

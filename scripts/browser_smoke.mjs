@@ -45,7 +45,7 @@ try {
   await page.locator('[data-filter="mine"]').click();
   assert.equal(await page.locator('#feed .message-card').count(), 1);
   await page.locator('#search-input').fill('no-match-found');
-  await page.locator('#empty-title').filter({ hasText: 'No thoughts' }).waitFor();
+  await page.locator('#empty-title').filter({ hasText: 'No matching messages' }).waitFor();
   await page.locator('#empty-action').click();
   assert.equal(await page.locator('#feed .message-card').count(), 1);
   await page.locator('#sort-input').selectOption('expiring');
@@ -78,7 +78,7 @@ try {
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), new RegExp('room=' + room));
   await page.keyboard.press('Escape');
   await page.locator('[data-room="ideas"]').click();
-  await waitFor(async () => await page.locator('#room-label').textContent() === 'Bright ideas', 'navigate to ideas');
+  await waitFor(async () => await page.locator('#room-label').textContent() === 'Ideas', 'navigate to ideas');
   await page.goBack();
   await page.locator('#feed .message-content').filter({ hasText: content }).waitFor();
   await accessibility('desktop messages');
@@ -94,7 +94,7 @@ try {
   await accessibility('mobile light');
   await page.screenshot({ path: 'test-results/mobile-light.png', fullPage: true });
   // Exercise capability deletion through the UI, including the confirmation.
-  await page.getByRole('button', { name: 'Burn your message', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete your message', exact: true }).click();
   await page.locator('#confirm-burn').click();
   await waitFor(async () => await page.locator('#feed .message-card').count() === 0, 'burn removes card');
   await page.locator('#new-room-btn').click();

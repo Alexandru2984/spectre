@@ -4,8 +4,8 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const iconsPath = '/static/icons.svg#';
   const roomPattern = /^[a-z0-9][a-z0-9-]{0,31}(?![\s\S])/;
-  const knownRooms = { lobby: 'The lobby', ideas: 'Bright ideas', questions: 'Open questions', 'after-hours': 'After hours' };
-  const kinds = { thought: ['A thought', 'spark'], idea: ['An idea', 'bulb'], question: ['A question', 'question'], poll: ['A poll', 'list'] };
+  const knownRooms = { lobby: 'The lobby', ideas: 'Ideas', questions: 'Questions', 'after-hours': 'After hours' };
+  const kinds = { thought: ['Message', 'spark'], idea: ['Idea', 'bulb'], question: ['Question', 'question'], poll: ['Poll', 'list'] };
   const reactionNames = { spark: 'Inspired', heart: 'Love', curious: 'Curious' };
   const state = {
     capabilities: new Map(), aliases: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, blocked: false, sending: false, reportRequest: 0, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
@@ -74,6 +74,7 @@
   }
   function showDialog(id) {
     const dialog = $(id);
+    $('#room-tools').open = false;
     if (!dialog.open) dialog.showModal();
   }
   function setTheme(theme) {
@@ -101,6 +102,17 @@
     setButtonIcon(mobileTheme, document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon');
   });
 
+  // Native disclosure keeps secondary room actions out of the main workspace.
+  $('#room-tools').addEventListener('click', event => {
+    if (!event.target.closest('button')) return;
+    $('#room-tools').open = false;
+    $('#room-tools summary').focus({ preventScroll: true });
+  }, true);
+  document.addEventListener('click', event => { if (!event.target.closest('#room-tools')) $('#room-tools').open = false; });
+  $('#room-tools').addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault(); $('#room-tools').open = false; $('#room-tools summary').focus();
+  });
   $$('#help-btn, #mobile-help-btn, #privacy-btn').forEach(button => button.addEventListener('click', () => showDialog('#help-dialog')));
   $('#shortcuts-btn').addEventListener('click', () => showDialog('#shortcuts-dialog'));
   $$('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
@@ -126,6 +138,7 @@
   function changeRoom(room, push = false) {
     if (!roomPattern.test(room)) { toast('That room name is invalid. Welcome to the lobby.'); room = 'lobby'; }
     const oldRoom = state.room;
+    $('#room-tools').open = false;
     saveDraft();
     clearPresentation();
     if (clientToken && state.roomMeta) fetch('/api/presence?room=' + encodeURIComponent(oldRoom), { method: 'DELETE', headers: authHeaders(), credentials: 'omit', keepalive: true }).catch(() => {});
@@ -305,15 +318,15 @@
     if ($('#send-btn').disabled || state.locked) return;
     const input = $('#content-input');
     const content = input.value.trim();
-    if (!content) { feedback('Give your thought a few words first.', true); input.focus(); return; }
-    if (new TextEncoder().encode(content).length > 2000) { feedback('That thought is a little too large. Keep it under 2000 UTF-8 bytes.', true); return; }
+    if (!content) { feedback('Write a message first.', true); input.focus(); return; }
+    if (new TextEncoder().encode(content).length > 2000) { feedback('The message exceeds the 2000-byte limit.', true); return; }
     const options = $('#kind-input').value === 'poll' ? $('#poll-options').value.split('\n').map(value => value.trim()).filter(Boolean) : [];
     if ($('#kind-input').value === 'poll' && (options.length < 2 || options.length > 6 || new Set(options).size !== options.length || options.some(value => characterCount(value) > 100 || new TextEncoder().encode(value).length > 400))) { feedback('A poll needs 2–6 distinct options of up to 100 characters.', true); return; }
     const room = state.room;
     const generation = state.generation;
     const draft = currentDraft();
     state.sending = true; $('#send-btn').disabled = true;
-    feedback('Leaving your thought…');
+    feedback('Sending message…');
     try {
       const { data } = await api('/api/messages', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -325,15 +338,14 @@
       if (generation !== state.generation) {
         const saved = state.drafts.get(room);
         if (saved && JSON.stringify(saved.value) === JSON.stringify(draft)) state.drafts.delete(room);
-        toast('Your thought was sent to #' + room + '.'); return;
+        toast('Message sent to #' + room + '.'); return;
       }
       const unchanged = JSON.stringify(currentDraft()) === JSON.stringify(draft);
       if (unchanged) { input.value = ''; cancelReply(); $('#poll-options').value = ''; state.drafts.delete(room); }
       if (state.roomMeta?.slow_mode_seconds && !state.roomMeta.can_moderate) state.cooldowns.set(room, now() + state.roomMeta.slow_mode_seconds * 1000);
       updateCharacterCount();
-      feedback('It’s here. For a little while.');
+      feedback('Message sent.');
       if (validMessage(data.message)) { state.messages = [...state.messages.filter(message => message.id !== data.id), data.message]; render(); }
-      toast('Thought shared. Let the moment happen.');
       if (!state.paused) syncRoom();
     } catch (error) {
       if (error.status === 429) state.cooldowns.set(room, now() + error.retryAfter * 1000);
@@ -412,11 +424,11 @@
       button.addEventListener('click', () => react(message, key)); reactions.append(button);
     }
     const actions = element('div', 'card-actions');
-    const copy = element('button', 'icon-button'); copy.type = 'button'; copy.append(icon('copy')); copy.setAttribute('aria-label', 'Copy thought');
+    const copy = element('button', 'icon-button'); copy.type = 'button'; copy.append(icon('copy')); copy.setAttribute('aria-label', 'Copy message');
     copy.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-copy';
-    copy.addEventListener('click', () => copyText(message.content, 'Thought copied. Keep it with care.')); actions.append(copy);
+    copy.addEventListener('click', () => copyText(message.content, 'Message copied.')); actions.append(copy);
     if (state.burnKeys.has(message.id)) {
-      const burn = element('button', 'icon-button burn-action'); burn.type = 'button'; burn.append(icon('flame')); burn.setAttribute('aria-label', 'Burn your message');
+      const burn = element('button', 'icon-button burn-action'); burn.type = 'button'; burn.append(icon('trash')); burn.setAttribute('aria-label', 'Delete your message');
       burn.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-burn';
       burn.addEventListener('click', () => { state.burnId = message.id; showDialog('#burn-dialog'); }); actions.append(burn);
     }
@@ -432,10 +444,9 @@
     $('#feed-count').textContent = messages.length;
     const noMatch = active > 0 || state.filter !== 'all' || Boolean($('#search-input').value);
     $('#empty-state').hidden = messages.length > 0;
-    $('#empty-title').textContent = noMatch ? 'No thoughts in this corner. Yet.' : 'A little quiet. A lot of possibility.';
-    $('#empty-description').textContent = noMatch ? 'Try another filter, clear your search, or start a new thought.' : 'Be the first to leave a thought. Sometimes that’s all it takes.';
-    $('#empty-action').firstChild.textContent = state.hidden.size && state.filter === 'all' && !$('#search-input').value ? 'Show hidden messages ' : noMatch ? 'Clear the filters ' : 'Start a little something';
-    $('.starter-prompts').hidden = noMatch;
+    $('#empty-title').textContent = noMatch ? 'No matching messages' : 'No messages yet';
+    $('#empty-description').textContent = noMatch ? 'Clear the search or choose another filter.' : 'Send the first message or share this room.';
+    $('#empty-action').firstChild.textContent = state.hidden.size && state.filter === 'all' && !$('#search-input').value ? 'Show hidden messages' : noMatch ? 'Clear filters' : 'Write a message';
     $('#feed').hidden = state.view !== 'feed' || !messages.length;
     $('#constellation-panel').hidden = state.view !== 'constellation' || !messages.length;
     const thread = state.selectedId ? state.messages.filter(message => message.id === state.selectedId || message.parent_id === state.selectedId) : null;
@@ -484,7 +495,7 @@
       await api(apiPath('/' + encodeURIComponent(id)), { method: 'DELETE', headers: { 'x-burn-key': capability.key }, signal: AbortSignal.timeout(10000) });
       state.burnKeys.delete(id);
       if (generation === state.generation) { removeLocalMessage(id); render(); }
-      $('#burn-dialog').close(); toast('Gone. A little space for the next thought.');
+      $('#burn-dialog').close(); toast('Message deleted.');
     } catch (error) { toast(error.status ? error.message : 'Couldn’t confirm the burn. Please try again.'); }
     finally { $('#confirm-burn').disabled = false; }
   });
@@ -505,7 +516,7 @@
     if (!state.selectedId) return;
     const message = state.messages.find(item => item.id === state.selectedId && timeLeft(item) > 0);
     if (!message) {
-      if ($('#message-dialog').open) { $('#message-dialog').close(); toast('That thought has drifted away.'); }
+      if ($('#message-dialog').open) { $('#message-dialog').close(); toast('This message has expired or was removed.'); }
       state.selectedId = null; $('#message-detail').replaceChildren();
     } else {
       const focused = document.activeElement?.dataset?.focusKey;
@@ -793,6 +804,7 @@
     catch (error) { toast(error.message); }
   });
   function lockRoom(message) {
+    $('#room-tools').open = false;
     for (const item of state.messages) { state.burnKeys.delete(item.id); state.myReactions.delete(item.id); state.myPollVotes.delete(item.id); state.hidden.delete(item.id); }
     state.alias = '';
     state.drafts.delete(state.room); state.recentRooms.delete(state.room); state.cooldowns.delete(state.room); state.capabilities.delete(state.room); state.aliases.delete(state.room);
@@ -817,17 +829,18 @@
     $('#room-label').textContent = knownRooms[meta.id] || meta.name;
     for (const node of [$('#room-label'), $('#room-crumb')]) { if (knownRooms[meta.id]) delete node.dataset.untranslated; else node.dataset.untranslated = ''; }
     $('#room-crumb').textContent = knownRooms[meta.id] || meta.name;
+    if (!knownRooms[meta.id]) $('#custom-room-link span').textContent = meta.name;
     $('#space-label').textContent = meta.private ? 'Private event' : meta.expires_at ? 'Public event' : 'Public space';
     $('#room-security').textContent = meta.encrypted ? 'Private · E2EE text' : meta.private ? 'Private · access controlled' : 'Public room';
     $('.public-tag').textContent = meta.private ? 'PRIVATE ROOM' : 'PUBLIC ROOM';
-    $('#compose-privacy').replaceChildren(icon(meta.private ? 'ghost' : 'globe'), document.createTextNode(meta.encrypted ? 'Message text is encrypted in your browser. Invitation holders can read it.' : meta.private ? 'Invitation holders can read this room. Text is processed by the server.' : 'Public by design. Share thoughts, never secrets.'));
+    $('#compose-privacy').replaceChildren(icon(meta.private ? 'ghost' : 'globe'), document.createTextNode(meta.encrypted ? 'Message text is encrypted in your browser. Invitation holders can read it.' : meta.private ? 'Invitation holders can read this room. Text is processed by the server.' : 'Public room. Anyone can read these messages.'));
     $('#close-room-btn').hidden = !meta.is_owner;
     $('#room-settings-btn').hidden = !meta.is_owner;
     $('#room-topic').textContent = meta.topic || ''; $('#room-topic').hidden = !meta.topic;
     state.recentRooms.delete(meta.id); state.recentRooms.set(meta.id, { name: meta.name, expires_at: meta.expires_at });
     while (state.recentRooms.size > 12) state.recentRooms.delete(state.recentRooms.keys().next().value);
     renderRecentRooms();
-    $('#presence-count').textContent = people.count + ' active sessions';
+    $('#presence-count').textContent = people.count === 1 ? '1 active session' : people.count + ' active sessions';
     $('#participants-list').replaceChildren(...people.aliases.map(alias => { const node = element('li', '', alias); node.dataset.untranslated = ''; return node; }));
     if (!people.aliases.length) $('#participants-list').append(element('li', '', 'No aliases shared.'));
     tickEvent();
@@ -854,7 +867,7 @@
       $('#discovery-list').replaceChildren(...data.map(room => {
         const button = element('button', 'discovery-card'); button.type = 'button';
         const name = element('strong', '', knownRooms[room.id] || room.name); if (!knownRooms[room.id]) name.dataset.untranslated = '';
-        const topic = element('p', '', room.topic || 'A space for fleeting thoughts.'); if (room.topic) topic.dataset.untranslated = '';
+        const topic = element('p', '', room.topic || 'Messages, replies and polls.'); if (room.topic) topic.dataset.untranslated = '';
         button.append(name, topic, element('small', '', room.active + ' messages · ' + room.sessions + ' active sessions'));
         button.addEventListener('click', () => { $('#discover-dialog').close(); changeRoom(room.id, true); }); return button;
       }));
@@ -1070,7 +1083,7 @@
     const remaining = meta?.can_moderate ? 0 : Math.max(0, Math.ceil(((state.cooldowns.get(state.room) || 0) - now()) / 1000));
     const paused = meta?.posting_mode === 'paused' && !meta.can_moderate;
     $('#send-btn').disabled = state.locked || state.sending || Boolean(meta?.encrypted && !capabilities().key) || paused || remaining > 0;
-    const label = remaining ? 'Wait ' + remaining + 's' : 'Let it go';
+    const label = remaining ? 'Wait ' + remaining + 's' : 'Send message';
     if ($('#send-btn span').textContent !== SpectreI18n.t(label)) $('#send-btn span').textContent = label;
     const policy = meta?.posting_mode === 'paused' ? 'The host has paused new messages.' : meta?.posting_mode === 'questions' ? 'Questions and replies only.' : '';
     const slow = meta?.slow_mode_seconds ? 'Slow mode: ' + meta.slow_mode_seconds + 's between messages.' : '';

@@ -850,8 +850,14 @@
   }
   $('#close-room-btn').addEventListener('click', () => showDialog('#close-room-dialog'));
   $('#confirm-close-room').addEventListener('click', async () => {
-    try { await api(roomPath('room'), { method: 'DELETE', signal: AbortSignal.timeout(10000) }); closeDialog('#close-room-dialog'); lockRoom('This event has ended. Its messages and sessions have been removed.'); }
-    catch (error) { toast(error.message); }
+    const button = $('#confirm-close-room'); if (button.disabled) return;
+    button.disabled = true;
+    const generation = state.generation, dialog = $('#close-room-dialog'), version = dialogVersion(dialog);
+    try {
+      await api(roomPath('room'), { method: 'DELETE', signal: AbortSignal.timeout(10000) });
+      if (generation === state.generation && !state.blocked) lockRoom('This event has ended. Its messages and sessions have been removed.');
+    } catch (error) { if (currentDialog(dialog, version, generation)) toast(error.message); }
+    finally { button.disabled = false; }
   });
   function lockRoom(message) {
     $('#room-tools').open = false;

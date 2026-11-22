@@ -31,8 +31,8 @@ try {
     while (Date.now() < end) { if (await check()) return; await p.waitForTimeout(100); }
     assert.fail(label);
   }
-  async function painted() {
-    return p.locator('#constellation').evaluate(c => c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some(v => v !== 0));
+  async function painted(page = p) {
+    return page.locator('#constellation').evaluate(c => c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some(v => v !== 0));
   }
   // Hold an actual server response after the mutation commits, then reopen its dialog.
   async function holdResponse(match, action) {
@@ -216,9 +216,33 @@ try {
   await goRoom('read-empty-' + Date.now());
   assert.equal(await painted(), false, 'Navigation to an empty room clears pixels');
   assert.equal(await p.locator('#signal-index').textContent(), '');
+
+  // A delayed close for event A must not lock room B or erase B's draft.
+  const q = await context.newPage();
+  await q.setExtraHTTPHeaders({ 'X-Real-IP': 'reading-close-reader-' + Date.now() });
+  q.on('pageerror', e => errors.push(e.message));
+  await q.goto(base + '/?room=' + event.room.id + '#invite=' + event.access_key);
+  await q.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
+  await until(() => painted(q), 'Reader paints event before closure');
+  await goRoom(event.room.id);
+  await openRoomTool(p, '#close-room-btn');
+  const releaseClose = await holdResponse(/\/api\/room\?/, () => p.locator('#confirm-close-room').click());
+  await goRoom(otherRoom);
+  await p.locator('[data-view="feed"]').click();
+  await p.locator('#content-input').fill('Keep this other-room draft');
+  await releaseClose();
+  assert.equal(await p.locator('#connection-text').textContent(), 'Live now', 'Old closure cannot lock another room');
+  assert.equal(await p.locator('#content-input').inputValue(), 'Keep this other-room draft');
+  await until(async () => await q.locator('#connection-text').textContent() === 'Room unavailable', 'Closure reaches the event reader');
+  assert.equal(await painted(q), false, 'Event closure clears pixels');
+  assert.equal(await q.locator('#signal-index').textContent(), '');
+  await q.close();
+
   const expiryRoom = 'read-expiry-' + Date.now();
+  const fixtureHeaders = { 'X-Real-IP': 'reading-expiry-fixtures-' + Date.now() };
+  await p.locator('[data-view="constellation"]').click();
   await p.goto(base + '/?room=' + expiryRoom); await live();
-  const ephemeral = await context.request.post(base + '/api/messages', { data: { room: expiryRoom, content: 'A short canvas fixture', ttl: 3000, kind: 'thought' } });
+  const ephemeral = await context.request.post(base + '/api/messages', { headers: fixtureHeaders, data: { room: expiryRoom, content: 'A short canvas fixture', ttl: 3000, kind: 'thought' } });
   assert.equal(ephemeral.status(), 201);
   await p.locator('#signal-index button').waitFor(); await until(painted, 'Expiring message is drawn');
   await until(async () => await p.locator('#constellation-panel').isHidden(), 'Expiry hides constellation');
@@ -226,7 +250,7 @@ try {
   assert.equal(await p.locator('#signal-index').textContent(), '');
 
   await p.locator('[data-view="feed"]').click();
-  const hiddenExpiry = await context.request.post(base + '/api/messages', { data: { room: expiryRoom, content: 'A short hidden fixture', ttl: 4000, kind: 'thought' } });
+  const hiddenExpiry = await context.request.post(base + '/api/messages', { headers: fixtureHeaders, data: { room: expiryRoom, content: 'A short hidden fixture', ttl: 4000, kind: 'thought' } });
   assert.equal(hiddenExpiry.status(), 201);
   await card('A short hidden fixture').getByRole('button', { name: 'Hide', exact: true }).click();
   await p.locator('#hidden-notice').waitFor();
@@ -234,14 +258,6 @@ try {
   await p.evaluate(() => document.querySelector('#restore-hidden').click());
   assert.equal(await p.locator('#feed .message-card').count(), 0, 'Restore cannot revive an expired message');
 
-  // Reload retained no owner keys; use the fixture's explicit private capabilities.
-  await p.goto(base + '/?room=' + event.room.id + '#invite=' + event.access_key); await live();
-  await p.locator('[data-view="constellation"]').click(); await until(painted, 'Live event paints before closure');
-  const closed = await context.request.delete(base + '/api/room?room=' + event.room.id, { headers: { 'X-Room-Key': event.access_key, 'X-Moderator-Key': event.owner_key } });
-  assert.equal(closed.status(), 200);
-  await until(async () => await p.locator('#connection-text').textContent() === 'Room unavailable', 'Event closure reaches the reader');
-  assert.equal(await painted(), false, 'Event closure clears pixels');
-  assert.equal(await p.locator('#signal-index').textContent(), '');
   assert.deepEqual(errors, []);
   console.log('Browser reading/lifecycle regressions passed.');
 } finally { releaseResponses.forEach(release => release()); await browser.close(); }

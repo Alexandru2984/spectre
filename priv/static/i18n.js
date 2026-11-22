@@ -102,6 +102,37 @@
     "Back to the room": "Înapoi în cameră"
 });
   Object.assign(ro, {'Private event':'Eveniment privat','Public event':'Eveniment public'});
+  Object.assign(ro, {
+    "Present room": "Prezintă camera",
+    "Room spotlight": "Mesaj evidențiat",
+    "Open conversation": "Deschide conversația",
+    "Room presentation": "Prezentarea camerei",
+    "Presentation messages": "Mesaje în prezentare",
+    "All main messages": "Toate mesajele principale",
+    "Unresolved": "Nerezolvate",
+    "Unresolved questions": "Întrebări nerezolvate",
+    "Previous": "Anterior",
+    "Next": "Următor",
+    "Go to spotlight": "Mergi la mesajul evidențiat",
+    "Close presentation": "Închide prezentarea",
+    "Read-only presentation. Messages keep their original expiry. Use Previous and Next or the left and right keys.": "Prezentare doar pentru citire. Mesajele își păstrează expirarea inițială. Folosește Anterior și Următor sau tastele stânga și dreapta.",
+    "No main messages in this view. Try another filter or wait for a new message.": "Nu există mesaje principale în această vedere. Încearcă alt filtru sau așteaptă un mesaj nou.",
+    "Resolved": "Rezolvată",
+    "Poll closed": "Sondaj închis",
+    "Spotlighted": "În prim-plan",
+    "Closed polls keep their results until they expire.": "Sondajele închise își păstrează rezultatele până la expirare.",
+    "Reopen question": "Redeschide întrebarea",
+    "Mark resolved": "Marchează rezolvată",
+    "Reopen voting": "Redeschide votarea",
+    "Close voting": "Închide votarea",
+    "Clear spotlight": "Retrage evidențierea",
+    "Spotlight": "Evidențiază",
+    "Expected a message_id string.": "Este necesar un identificator de mesaj de tip text.",
+    "Spotlight a main message, not a reply.": "Evidențiază un mesaj principal, nu un răspuns.",
+    "Only a main question can be resolved.": "Doar o întrebare principală poate fi marcată ca rezolvată.",
+    "This poll is closed. Its results are final until reopened.": "Acest sondaj este închis. Rezultatele rămân fixe până la redeschidere."
+});
+  Object.assign(ro, {'Presented message':'Mesajul prezentat','Offline · messages still expire':'Offline · mesajele expiră în continuare'});
   const originals = new WeakMap(), attributes = new WeakMap();
   const explicitRomanian = /^\/ro(?:\/|$)/.test(location.pathname);
   let language = explicitRomanian ? 'ro' : 'en';
@@ -109,6 +140,7 @@
   const reverse = new Map(Object.entries(ro).map(([en,translated]) => [translated,en]));
   const canonical = text => reverse.has(text.trim()) ? text.replace(text.trim(),reverse.get(text.trim())) : text;
   const patterns = [
+    [/^(\d+) of (\d+)$/,m=>m[1]+' din '+m[2]],
     [/^Replies \((\d+)\)$/,m=>'Răspunsuri ('+m[1]+')'],
     [/^Wait (\d+)s$/,m=>'Așteaptă '+m[1]+'s'],
     [/^Slow mode: (\d+)s between messages\.$/,m=>'Mod lent: '+m[1]+'s între mesaje.'],

@@ -83,7 +83,10 @@ try {
   await p.locator('#content-input').fill('Yes. Start with one useful question.');
   await p.locator('[data-ttl="300000"]').click();
   await p.locator('#send-btn').click();
-  await until(p, async () => await p.locator('#feed .message-card').count() === 0, 'Answered questions leave the unanswered filter');
+  await p.locator('#feed').getByRole('button', { name: 'Thread (1)', exact: true }).waitFor();
+  assert.equal(await p.locator('#feed .message-card').count(), 1, 'A reply alone does not certify resolution');
+  await p.locator('#feed').getByRole('button', { name: 'Mark resolved', exact: true }).click();
+  await until(p, async () => await p.locator('#feed .message-card').count() === 0, 'Resolved questions leave the unresolved filter');
   await p.locator('[data-filter="all"]').click();
   await p.locator('#feed').getByRole('button', { name: 'Thread (1)', exact: true }).click();
   await p.locator('#message-dialog[open]').waitFor();
@@ -128,5 +131,5 @@ try {
   assert.equal(await q.locator('#content-input').inputValue(), '', 'Closure clears active draft');
   assert.equal(await q.locator('#room-topic').textContent(), '', 'Closure clears room topic');
   assert.deepEqual(errors, []);
-  console.log('Product browser checks passed: templates, private recent rooms, Unicode counts, isolated memory drafts, live owner policies/cooldowns, unanswered questions, complete threads, focus and 320–1440px layouts.');
+  console.log('Product browser checks passed: templates, private recent rooms, Unicode counts, isolated memory drafts, live owner policies/cooldowns, explicit question resolution, complete threads, focus and 320–1440px layouts.');
 } finally { await browser.close(); }

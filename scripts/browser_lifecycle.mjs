@@ -86,6 +86,27 @@ try {
   await page.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
   await page.evaluate(() => {
     const decrypt = window.SpectreCrypto.decrypt;
+    const gate = new Promise(resolve => { window.releaseOfflineSnapshot = resolve; });
+    window.SpectreCrypto.decrypt = async (...args) => {
+      window.offlineSnapshotDecoding = true; await gate;
+      const value = await decrypt(...args); window.offlineSnapshotDecoded = true; return value;
+    };
+    document.querySelector('#retry-btn').click();
+  });
+  await until(async () => await page.evaluate(() => window.offlineSnapshotDecoding), 'Snapshot decoding is suspended before disconnect');
+  await context.setOffline(true);
+  await page.locator('#offline-banner:not([hidden])').waitFor();
+  await page.evaluate(() => window.releaseOfflineSnapshot());
+  await until(async () => await page.evaluate(() => window.offlineSnapshotDecoded), 'Snapshot finishes decoding while offline');
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('#connection-text').textContent(), 'Offline', 'A buffered response cannot claim a live connection');
+  assert(await page.locator('#offline-banner').isVisible());
+  await context.setOffline(false);
+  await page.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
+  await page.reload();
+  await page.locator('#connection-text').filter({ hasText: 'Live now' }).waitFor();
+  await page.evaluate(() => {
+    const decrypt = window.SpectreCrypto.decrypt;
     const gate = new Promise(resolve => { window.releaseSnapshot = resolve; });
     window.SpectreCrypto.decrypt = async (...args) => {
       window.snapshotDecoding = true; await gate; return decrypt(...args);
@@ -101,5 +122,5 @@ try {
   assert(await page.locator('#send-btn').isDisabled());
   assert.equal(await page.locator('#feed .message-card').count(), 0, 'Late decoded snapshot cannot restore closed-room content');
   assert.deepEqual(errors, []);
-  console.log('Lifecycle regressions passed: initial reconnect, paused burn cascade, report expiry, obsolete dialogs and decoded snapshots after closure.');
+  console.log('Lifecycle regressions passed: initial reconnect, paused burn cascade, report expiry, obsolete dialogs, delayed offline responses and decoded snapshots after closure.');
 } finally { await browser.close(); }

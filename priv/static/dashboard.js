@@ -10,9 +10,10 @@
   const state = {
     capabilities: new Map(), aliases: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, blocked: false, sending: false, reportRequest: 0, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
     room: 'lobby', messages: [], burnKeys: new Map(), myReactions: new Map(), drafts: new Map(), recentRooms: new Map(), cooldowns: new Map(), people: { count: 0, aliases: [] },
+    presentationId: '', presentationFilter: 'all', presentationSignature: '',
     ttl: 30000, filter: 'all', view: 'feed', paused: false, failures: 0,
     clockOffset: 0, timer: null, toastTimer: null, syncing: false, generation: 0,
-    controller: null, signature: '', selectedId: null, burnId: null,
+    controller: null, signature: '', selectedId: null, burnId: null, refreshRequested: false,
     pending: new Set(), hits: [], animation: null, canvasWidth: 0, canvasHeight: 0,
     motion: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   };
@@ -126,6 +127,7 @@
     if (!roomPattern.test(room)) { toast('That room name is invalid. Welcome to the lobby.'); room = 'lobby'; }
     const oldRoom = state.room;
     saveDraft();
+    clearPresentation();
     if (clientToken && state.roomMeta) fetch('/api/presence?room=' + encodeURIComponent(oldRoom), { method: 'DELETE', headers: authHeaders(), credentials: 'omit', keepalive: true }).catch(() => {});
     readInvitation(room);
     state.watchController?.abort(); state.watchController = null;
@@ -137,6 +139,7 @@
     state.controller?.abort();
     clearTimeout(state.timer);
     state.syncing = false;
+    state.refreshRequested = false;
     state.room = room; state.alias = state.aliases.get(room) || '';
     state.messages = [];
     state.selectedId = null;
@@ -230,14 +233,15 @@
       updateRoomMeta(data.room, data.presence);
       restoreReplyPreview();
       state.failures = 0;
-      connection('live', 'Live now');
-      $('#offline-banner').hidden = true;
-      $('#sync-label').textContent = 'Live updates · connected';
+      if (navigator.onLine) {
+        connection('live', 'Live now'); $('#offline-banner').hidden = true;
+        $('#sync-label').textContent = 'Live updates · connected';
+      } else markOffline();
       cleanCapabilities();
       pruneSecondaryViews();
       render();
     } catch (error) {
-      if (generation !== state.generation || state.paused) return;
+      if (generation !== state.generation || state.paused || state.blocked) return;
       if ([403,404,410].includes(error.status)) { lockRoom(error.message); return; }
       state.failures++;
       delay = error.status === 429 ? error.retryAfter * 1000 : Math.min(60000, 4000 * 2 ** Math.min(state.failures, 4));
@@ -246,7 +250,11 @@
       $('#sync-label').textContent = error.status === 429 ? 'Taking a breather · retrying shortly' : 'Reconnecting · your draft stays here';
     } finally {
       clearTimeout(timeout);
-      if (generation === state.generation) { state.syncing = false; if (!state.blocked) { schedule(state.failures ? delay : 20000); watchRoom(); } }
+      if (generation === state.generation) {
+        state.syncing = false;
+        const refresh = state.refreshRequested; state.refreshRequested = false;
+        if (!state.blocked) { schedule(refresh ? 0 : state.failures ? delay : 20000); watchRoom(); }
+      }
     }
   }
   function cleanCapabilities() {
@@ -261,7 +269,8 @@
   }
   $('#retry-btn').addEventListener('click', syncRoom);
   window.addEventListener('online', syncRoom);
-  window.addEventListener('offline', () => { connection('error', 'Offline'); $('#offline-banner').hidden = false; });
+  function markOffline() { connection('error', 'Offline'); $('#offline-banner').hidden = false; $('#sync-label').textContent = 'Offline · messages still expire'; }
+  window.addEventListener('offline', markOffline);
   document.addEventListener('visibilitychange', () => {
     clearTimeout(state.timer);
     if (document.hidden) stopAnimation(); else { syncRoom(); startAnimation(); }
@@ -367,11 +376,11 @@
     const query = $('#search-input').value.trim().toLocaleLowerCase();
     const sort = $('#sort-input').value;
     return state.messages.filter(message => timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(message.parent_id))
-      .filter(message => state.filter === 'all' || (state.filter === 'mine' ? state.burnKeys.has(message.id) : state.filter === 'unanswered' ? message.kind === 'question' && !message.parent_id && !repliesTo(message.id).length : message.kind === state.filter))
+      .filter(message => state.filter === 'all' || (state.filter === 'mine' ? state.burnKeys.has(message.id) : state.filter === 'unanswered' ? message.kind === 'question' && !message.parent_id && !message.resolved : message.kind === state.filter))
       .filter(message => !query || [message.content, message.author || '', ...(message.options || [])].some(text => text.toLocaleLowerCase().includes(query)))
       .sort((a, b) => (sort === 'expiring' ? a.expires_at - b.expires_at : sort === 'reactions' ? reactionCount(b) - reactionCount(a) : sort === 'replies' ? repliesTo(b.id).length - repliesTo(a.id).length : b.created_at - a.created_at) || a.id.localeCompare(b.id));
   }
-  function buildCard(message, detail = false) {
+  function buildCard(message, detail = false, presentation = false) {
     const card = element('article', 'message-card');
     card.dataset.messageId = message.id;
     const header = element('div', 'card-top');
@@ -379,6 +388,9 @@
     const tag = element('span', 'kind-tag ' + message.kind);
     tag.append(icon(kindIcon), document.createTextNode(label)); header.append(tag);
     if (state.burnKeys.has(message.id)) header.append(element('span', 'owner-badge', 'You'));
+    if (message.resolved) header.append(element('span', 'status-badge', 'Resolved'));
+    if (message.poll_closed) header.append(element('span', 'status-badge', 'Poll closed'));
+    if (message.id === state.roomMeta?.spotlight_id) header.append(element('span', 'status-badge spotlight-badge', 'Spotlighted'));
     const age = element('time', 'card-age', 'just now');
     age.dateTime = new Date(message.created_at).toISOString(); age.title = new Date(message.created_at).toLocaleTimeString(); header.append(age);
     const content = element('p', 'message-content', message.content);
@@ -409,7 +421,8 @@
       burn.addEventListener('click', () => { state.burnId = message.id; showDialog('#burn-dialog'); }); actions.append(burn);
     }
     footer.append(reactions, actions); card.append(header, content, lifetime, footer);
-    addMessageFeatures(card, message, detail);
+    addMessageFeatures(card, message, detail, presentation);
+    if (presentation) footer.remove();
     return card;
   }
   function render() {
@@ -426,7 +439,7 @@
     $('#feed').hidden = state.view !== 'feed' || !messages.length;
     $('#constellation-panel').hidden = state.view !== 'constellation' || !messages.length;
     const thread = state.selectedId ? state.messages.filter(message => message.id === state.selectedId || message.parent_id === state.selectedId) : null;
-    const signature = JSON.stringify([state.view, messages, thread, [...state.pending], [...state.myReactions], [...state.burnKeys.keys()], [...state.myPollVotes], Boolean(state.roomMeta?.can_moderate)]);
+    const signature = JSON.stringify([state.view, messages, thread, [...state.pending], [...state.myReactions], [...state.burnKeys.keys()], [...state.myPollVotes], Boolean(state.roomMeta?.can_moderate), state.roomMeta?.spotlight_id]);
     if (signature !== state.signature) {
       state.signature = signature;
       const focused = document.activeElement?.dataset?.focusKey;
@@ -442,6 +455,7 @@
       updateDetail();
     }
     tickCards();
+    renderSessionViews();
     if (state.view === 'constellation') { resizeCanvas(); startAnimation(); drawCanvas(); }
   }
   async function react(message, emoji) {
@@ -480,7 +494,7 @@
       if (!message) return;
       const left = timeLeft(message);
       $('.countdown', card).textContent = formatTime(left) + ' left';
-      $('progress', card).value = left;
+      $('.card-lifetime progress', card).value = left;
       card.classList.toggle('expiring', left < 10000);
       const seconds = Math.max(0, Math.floor((now() - message.created_at) / 1000));
       $('.card-age', card).textContent = seconds < 10 ? 'just now' : seconds < 60 ? seconds + 's ago' : Math.floor(seconds / 60) + 'm ago';
@@ -509,7 +523,7 @@
     state.messages = state.messages.filter(message => timeLeft(message) > 0);
     cleanCapabilities(); tickEvent(); pruneSecondaryViews(); updatePostingControls();
     if (state.replyTo && !state.messages.some(message => message.id === state.replyTo)) cancelReply();
-    if (count !== state.messages.length) render(); else tickCards();
+    if (count !== state.messages.length) render(); else { tickCards(); renderSessionViews(); }
   }, 500);
 
   // Canvas is decorative; the signal buttons provide the same entry points
@@ -669,7 +683,7 @@
     $('#message-dialog').close(); $('#content-input').focus(); $('#content-input').scrollIntoView({ block: 'center', behavior: 'auto' });
   }
   function repliesTo(id) { return state.messages.filter(message => message.parent_id === id && timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(id)).sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)); }
-  function addMessageFeatures(card, message, detail = false) {
+  function addMessageFeatures(card, message, detail = false, presentation = false) {
     const content = $('.message-content', card); content.dataset.untranslated = '';
     if (message.decrypt_error) content.classList.add('decrypt-error');
     if (message.author) { const author = element('span', 'card-author', message.author); author.dataset.untranslated = ''; $('.card-top', card).insertBefore(author, $('.card-age', card)); }
@@ -680,28 +694,40 @@
     if (message.kind === 'poll' && !message.decrypt_error) {
       const poll = element('div', 'poll-choices'); poll.setAttribute('role', 'group'); poll.setAttribute('aria-label', 'Poll choices');
       for (const [index, option] of message.options.entries()) {
-        const button = element('button', 'poll-choice'); button.type = 'button'; button.setAttribute('aria-pressed', state.myPollVotes.get(message.id)?.index === index);
+        const button = element(presentation ? 'div' : 'button', 'poll-choice');
+        if (!presentation) { button.type = 'button'; button.setAttribute('aria-pressed', state.myPollVotes.get(message.id)?.index === index); }
         const label = element('span', '', option); label.dataset.untranslated = '';
         const votes = Number(message.poll_counts?.[index]) || 0;
         const total = Number(message.poll_total) || 0;
-        button.append(label, element('span', '', votes + ' · ' + (total ? Math.round(votes * 100 / total) : 0) + '%'));
-        button.disabled = state.pending.has(message.id); button.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-poll-' + index;
-        button.addEventListener('click', () => vote(message, index)); poll.append(button);
+        const percent = total ? Math.round(votes * 100 / total) : 0;
+        const bar = element('progress', 'poll-bar'); bar.max = 100; bar.value = percent; bar.setAttribute('aria-hidden', 'true');
+        button.append(label, element('span', 'poll-result', votes + ' · ' + percent + '%'), bar);
+        if (!presentation) {
+          button.disabled = state.pending.has(message.id) || Boolean(message.poll_closed); button.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-poll-' + index;
+          button.addEventListener('click', () => vote(message, index));
+        }
+        poll.append(button);
       }
       poll.append(element('span', 'poll-meta', 'Votes: ' + message.poll_total)); content.after(poll);
+      if (message.poll_closed) poll.append(element('p', 'dialog-note', 'Closed polls keep their results until they expire.'));
     }
+    if (presentation) return;
     const tools = element('div', 'message-tools');
-    function action(label, callback) { const button = element('button', 'text-button', label); button.type = 'button'; button.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-tool-' + tools.children.length; button.addEventListener('click', callback); tools.append(button); }
+    function action(label, callback, pending = false) { const button = element('button', 'text-button', label); button.type = 'button'; button.disabled = pending; button.dataset.focusKey = (detail ? 'detail-' : '') + message.id + '-tool-' + tools.children.length; button.addEventListener('click', callback); tools.append(button); }
     action('Reply', () => replyTo(message));
     const children = repliesTo(message.id);
     if (!message.parent_id && !detail) action(children.length ? 'Thread (' + children.length + ')' : 'Open thread', () => openMessage(message.id));
     action('Hide', () => { state.hidden.set(message.id, message.expires_at); if ($('#message-dialog').open) $('#message-dialog').close(); render(); });
     action('Report', () => { state.reportId = message.id; showDialog('#report-dialog'); });
     if (state.roomMeta?.can_moderate && !state.burnKeys.has(message.id)) action('Remove', () => removeAsModerator(message.id));
+    const canManage = state.burnKeys.has(message.id) || state.roomMeta?.can_moderate;
+    if (canManage && message.kind === 'question' && !message.parent_id) action(message.resolved ? 'Reopen question' : 'Mark resolved', () => setMessageFlag(message, 'resolve', { resolved: !message.resolved }), state.pending.has(message.id));
+    if (canManage && message.kind === 'poll') action(message.poll_closed ? 'Reopen voting' : 'Close voting', () => setMessageFlag(message, 'poll-state', { closed: !message.poll_closed }), state.pending.has(message.id));
+    if (state.roomMeta?.can_moderate && !message.parent_id) action(message.id === state.roomMeta.spotlight_id ? 'Clear spotlight' : 'Spotlight', () => setSpotlight(message.id === state.roomMeta.spotlight_id ? '' : message.id), state.pending.has('spotlight'));
     $('.card-footer', card).before(tools);
   }
   async function vote(message, index) {
-    if (state.pending.has(message.id)) return;
+    if (state.pending.has(message.id) || message.poll_closed) return;
     const generation = state.generation; state.pending.add(message.id); render();
     try {
       const { data } = await api(apiPath('/' + message.id + '/vote'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ option: index }), signal: AbortSignal.timeout(10000) });
@@ -771,6 +797,7 @@
     state.alias = '';
     state.drafts.delete(state.room); state.recentRooms.delete(state.room); state.cooldowns.delete(state.room); state.capabilities.delete(state.room); state.aliases.delete(state.room);
     state.locked = true; state.blocked = true; state.messages = []; state.roomMeta = null; cancelReply(); state.watchController?.abort(); state.controller?.abort();
+    clearPresentation();
     $$('dialog[open]').forEach(dialog => dialog.close());
     $('#participants-list').replaceChildren(); $('#alias-input').value = ''; $('#poll-options').value = ''; $('#content-input').value = ''; updateCharacterCount();
     $('#search-input').value = ''; $('#content-input').disabled = true; $('#poll-options').disabled = true;
@@ -879,6 +906,115 @@
     return headers;
   }
 
+  function refreshAfterMutation() {
+    if (state.paused || state.blocked) return;
+    if (state.syncing) state.refreshRequested = true; else syncRoom();
+  }
+  async function setMessageFlag(message, endpoint, body) {
+    if (state.pending.has(message.id) || state.locked) return;
+    const generation = state.generation;
+    state.pending.add(message.id); render();
+    try {
+      const key = state.burnKeys.get(message.id)?.key;
+      const { data } = await api(apiPath('/' + message.id + '/' + endpoint), {
+        method: 'POST', headers: { 'content-type': 'application/json', ...(key ? { 'x-burn-key': key } : {}) },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(10000),
+      });
+      if (generation !== state.generation || state.blocked) return;
+      if (validMessage(data)) state.messages = state.messages.map(item => item.id === message.id ? data : item);
+      refreshAfterMutation();
+    } catch (error) { if (generation === state.generation && !state.blocked) toast(error.message); }
+    finally { state.pending.delete(message.id); render(); }
+  }
+  async function setSpotlight(id) {
+    if (state.pending.has('spotlight') || state.locked) return;
+    const generation = state.generation;
+    state.pending.add('spotlight'); render();
+    try {
+      const { data } = await api(roomPath('spotlight'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message_id: id }), signal: AbortSignal.timeout(10000) });
+      if (generation !== state.generation || state.blocked || !state.roomMeta) return;
+      state.roomMeta = { ...state.roomMeta, spotlight_id: data.spotlight_id };
+      refreshAfterMutation();
+    } catch (error) { if (generation === state.generation && !state.blocked) toast(error.message); }
+    finally { state.pending.delete('spotlight'); render(); }
+  }
+  function shownMessage(message) { return timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(message.parent_id); }
+  function spotlightMessage() { return !state.locked && state.messages.find(message => message.id === state.roomMeta?.spotlight_id && !message.parent_id && shownMessage(message)); }
+  function setNodeText(node, text) { if (node.textContent !== text) node.textContent = text; }
+  function renderSessionViews() {
+    $('#present-btn').disabled = state.locked;
+    const message = spotlightMessage();
+    $('#spotlight-banner').hidden = !message;
+    setNodeText($('#spotlight-preview'), message ? message.content : '');
+    setNodeText($('#spotlight-countdown'), message ? SpectreI18n.t(formatTime(timeLeft(message)) + ' left') : '');
+    renderPresentation();
+  }
+  $('#spotlight-open').addEventListener('click', () => { const message = spotlightMessage(); if (message) openMessage(message.id); });
+  function presentationMessages() {
+    const filter = state.presentationFilter;
+    return state.messages.filter(message => !message.parent_id && shownMessage(message))
+      .filter(message => filter === 'all' || (filter === 'unresolved' ? message.kind === 'question' && !message.resolved : message.kind === filter))
+      .sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
+  }
+  function renderPresentation() {
+    if (!$('#presentation-dialog').open) return;
+    const messages = presentationMessages();
+    if (!messages.some(message => message.id === state.presentationId)) state.presentationId = messages[0]?.id || '';
+    const index = messages.findIndex(message => message.id === state.presentationId);
+    const message = messages[index];
+    setNodeText($('#presentation-room'), state.roomMeta?.name || '');
+    const signature = JSON.stringify([message || null, state.roomMeta?.spotlight_id]);
+    if (signature !== state.presentationSignature) {
+      state.presentationSignature = signature;
+      $('#presentation-message').replaceChildren(...(message ? [buildCard(message, true, true)] : []));
+      const content = $('#presentation-message .message-content');
+      if (content) { content.id = 'presented-content'; $('#presentation-message').setAttribute('aria-describedby', content.id); }
+      else $('#presentation-message').removeAttribute('aria-describedby');
+      $('#presentation-message').scrollTop = 0;
+    }
+    $('#presentation-empty').hidden = Boolean(message);
+    $('#presentation-message').hidden = !message;
+    $('#presentation-previous').disabled = index <= 0;
+    $('#presentation-next').disabled = index < 0 || index >= messages.length - 1;
+    $('#presentation-spotlight').disabled = !spotlightMessage();
+    setNodeText($('#presentation-position'), SpectreI18n.t((index + 1) + ' of ' + messages.length));
+    setNodeText($('#presentation-clock'), state.roomMeta?.expires_at ? SpectreI18n.t('Event ends in ' + formatTime(Math.max(0, state.roomMeta.expires_at - now()))) : '');
+  }
+  function showPresentation() {
+    if (state.locked) return;
+    $('#message-dialog').close();
+    state.presentationFilter = 'all'; $('#presentation-filter').value = 'all';
+    state.presentationId = spotlightMessage()?.id || ''; state.presentationSignature = '';
+    showDialog('#presentation-dialog'); renderPresentation();
+    if (state.presentationId) $('#presentation-message').focus({ preventScroll: true });
+  }
+  function movePresentation(direction) {
+    const messages = presentationMessages();
+    const index = messages.findIndex(message => message.id === state.presentationId);
+    const message = messages[index + direction];
+    if (message) { state.presentationId = message.id; renderPresentation(); $('#presentation-message').focus({ preventScroll: true }); }
+  }
+  $('#present-btn').addEventListener('click', showPresentation);
+  $('#presentation-previous').addEventListener('click', () => movePresentation(-1));
+  $('#presentation-next').addEventListener('click', () => movePresentation(1));
+  $('#presentation-filter').addEventListener('change', () => { state.presentationFilter = $('#presentation-filter').value; renderPresentation(); });
+  $('#presentation-spotlight').addEventListener('click', () => {
+    const message = spotlightMessage(); if (!message) return;
+    state.presentationFilter = 'all'; $('#presentation-filter').value = 'all'; state.presentationId = message.id; renderPresentation();
+    $('#presentation-message').focus({ preventScroll: true });
+  });
+  function clearPresentation() {
+    state.presentationId = ''; state.presentationSignature = ''; $('#presentation-message').replaceChildren();
+    $('#presentation-message').removeAttribute('aria-describedby');
+    $('#presentation-room').textContent = ''; $('#presentation-position').textContent = ''; $('#presentation-clock').textContent = '';
+  }
+  $('#presentation-dialog').addEventListener('close', () => { if (!$('#presentation-dialog').open) clearPresentation(); });
+  $('#presentation-dialog').addEventListener('cancel', clearPresentation);
+  $('#presentation-dialog').addEventListener('keydown', event => {
+    if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.target.closest('input,select,textarea,[contenteditable]')) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); movePresentation(event.key === 'ArrowLeft' ? -1 : 1); }
+  });
+
   function currentDraft() {
     return { content: $('#content-input').value, options: $('#poll-options').value, kind: $('#kind-input').value, ttl: state.ttl, replyTo: state.replyTo };
   }
@@ -931,7 +1067,7 @@
     const onlyQuestions = meta?.posting_mode === 'questions' && !meta.can_moderate && !state.replyTo;
     for (const option of $('#kind-input').options) option.disabled = onlyQuestions && option.value !== 'question';
     if (onlyQuestions && $('#kind-input').value !== 'question') { $('#kind-input').value = 'question'; $('#poll-editor').hidden = true; }
-    const remaining = Math.max(0, Math.ceil(((state.cooldowns.get(state.room) || 0) - now()) / 1000));
+    const remaining = meta?.can_moderate ? 0 : Math.max(0, Math.ceil(((state.cooldowns.get(state.room) || 0) - now()) / 1000));
     const paused = meta?.posting_mode === 'paused' && !meta.can_moderate;
     $('#send-btn').disabled = state.locked || state.sending || Boolean(meta?.encrypted && !capabilities().key) || paused || remaining > 0;
     const label = remaining ? 'Wait ' + remaining + 's' : 'Let it go';

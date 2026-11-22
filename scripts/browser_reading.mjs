@@ -117,7 +117,8 @@ try {
 
   await card('First lifecycle fixture').getByRole('button', { name: 'Delete your message', exact: true }).click();
   const releaseDelete = await holdResponse(/\/api\/messages\/[^/?]+\?/, () => p.locator('#confirm-burn').click());
-  if (await p.locator('#burn-dialog').evaluate(d => d.open)) await p.locator('#burn-dialog [data-close]').first().click();
+  // Live room sync can already prune the deleted message's dialog while the DELETE response is held.
+  await p.locator('#burn-dialog').evaluate(d => { if (d.open) d.querySelector('[data-close]').click(); });
   await card('Second lifecycle fixture').getByRole('button', { name: 'Delete your message', exact: true }).click();
   await releaseDelete();
   assert(await p.locator('#burn-dialog').evaluate(d => d.open), 'Old delete success leaves the newer confirmation open');

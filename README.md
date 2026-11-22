@@ -1,4 +1,4 @@
-# Spectre 3 · Spectre-Link
+# Spectre 3.1 · Spectre-Link
 
 A public space for fleeting thoughts, built with Gleam and Erlang/OTP. Try it at **https://spectre.micutu.com**.
 
@@ -81,6 +81,6 @@ Browser → Cloudflare → nginx → loopback Mist HTTP server
                                         └── message actors + expiry timers
 ```
 
-The coordinator and rate limiter are linked to the application entry process. The coordinator serializes read authorization, mutations and expiry; OTP status/termination diagnostics redact content, capabilities and queued request details. Encrypted content is decrypted only by the browser. Critical actors are linked to the application entry process. A critical failure exits the instance; systemd restarts an empty instance rather than persisting message content. Expiry uses monotonic deadlines on the server; public timestamps use wall-clock time. No claim of durable delivery, private rooms, distributed replication or automatic hot upgrades is made.
+The coordinator and rate limiter are linked to the application entry process. The coordinator serializes read authorization, mutations and expiry; OTP status/termination diagnostics redact content, capabilities and queued request details. Encrypted content is decrypted only by the browser. Critical actors are linked to the application entry process. A critical failure exits the instance; systemd restarts an empty instance rather than persisting message content. Expiry uses monotonic deadlines on the server; public timestamps use wall-clock time. No claim of durable delivery, distributed replication or automatic hot upgrades is made.
 
 [Operations and rollback](docs/OPERATIONS.md) · [Audit](docs/SECURITY-AUDIT.md) · [Roadmap](docs/ROADMAP.md). Run `./scripts/deploy.sh` only on the configured VPS from a clean committed checkout. It tests a root-owned release under a dedicated systemd identity before switching this application's service/vhost. Restarts clear all live content.

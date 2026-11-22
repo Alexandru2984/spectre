@@ -10,6 +10,7 @@ npm run check:js
 node scripts/build-locales.mjs --check
 cmp priv/static/qrcode.js node_modules/qrcode-generator/dist/qrcode.js
 npm audit --audit-level=high
+python3 scripts/audit_hex.py
 gleam test
 gleam export erlang-shipment
 spectre_check_log="$(mktemp "${TMPDIR:-/tmp}/spectre-check.XXXXXXXX.log")"
@@ -30,3 +31,4 @@ BASE_URL=http://127.0.0.1:4400 python3 scripts/controls_smoke.py
 BASE_URL=http://127.0.0.1:4400 npm run test:browser
 BASE_URL=http://127.0.0.1:4400 npm run test:features
 BASE_URL=http://127.0.0.1:4400 node scripts/browser_lifecycle.mjs
+BASE_URL=http://127.0.0.1:4400 node scripts/browser_product.mjs

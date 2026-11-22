@@ -1,5 +1,7 @@
 # Spectre-Link: product and hardening plan
 
+Current iteration: [workspace release](WORKSPACE-RELEASE.md) and [2026-11-22 review/plan](PRODUCT-4-PLAN.md). The dated baseline and earlier delivery history below are retained for context.
+
 Date: 2026-11-05. Scope: this application, its systemd service, and its nginx vhost. Other VPS applications and global Cloudflare settings are outside the change set.
 
 ## Baseline

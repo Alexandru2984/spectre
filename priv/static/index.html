@@ -3,27 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101412">
-  <title>Spectre — ephemeral chat, polls and private event rooms</title>
-  <meta name="description" content="Share ephemeral messages, replies and polls in public or private event rooms. Live updates, optional browser encryption and no account required.">
+  <meta name="theme-color" content="#141619">
+  <title>Spectre — live rooms, ephemeral messages and polls</title>
+  <meta name="description" content="Open a public or private event room. Share messages, reply and vote in live polls, with host controls, optional browser encryption and no account.">
   <link rel="canonical" href="https://spectre.micutu.com/">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Spectre">
-  <meta property="og:title" content="Spectre — ephemeral chat, polls and private event rooms">
-  <meta property="og:description" content="Share ephemeral messages, replies and polls in public or private event rooms. Live updates, optional browser encryption and no account required.">
+  <meta property="og:title" content="Spectre — live rooms, ephemeral messages and polls">
+  <meta property="og:description" content="Open a public or private event room. Share messages, reply and vote in live polls, with host controls, optional browser encryption and no account.">
   <meta property="og:url" content="https://spectre.micutu.com/">
   <meta property="og:image" content="https://spectre.micutu.com/static/social.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Spectre — Good thoughts. Short lives. A space for fleeting thoughts.">
+  <meta property="og:image:alt" content="Spectre — Talk. Vote. Move on. Live rooms, messages and polls.">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/static/dashboard.css">
   <script src="/static/i18n.js" defer></script>
   <script src="/static/crypto.js" defer></script>
   <script src="/static/qrcode.js" defer></script>
   <script src="/static/dashboard.js" defer></script>
-<link rel="alternate" hreflang="en" href="https://spectre.micutu.com/"><link rel="alternate" hreflang="ro" href="https://spectre.micutu.com/ro"><link rel="alternate" hreflang="x-default" href="https://spectre.micutu.com/"><meta property="og:locale" content="en_US"><meta property="og:locale:alternate" content="ro_RO"><meta name="twitter:title" content="Spectre — ephemeral chat, polls and private event rooms"><meta name="twitter:description" content="Share ephemeral messages, replies and polls in public or private event rooms. Live updates, optional browser encryption and no account required."><meta name="twitter:image" content="https://spectre.micutu.com/static/social.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Spectre","url":"https://spectre.micutu.com/","description":"Share ephemeral messages, replies and polls in public or private event rooms. Live updates, optional browser encryption and no account required.","inLanguage":"en"}</script></head>
+<link rel="alternate" hreflang="en" href="https://spectre.micutu.com/"><link rel="alternate" hreflang="ro" href="https://spectre.micutu.com/ro"><link rel="alternate" hreflang="x-default" href="https://spectre.micutu.com/"><meta property="og:locale" content="en_US"><meta property="og:locale:alternate" content="ro_RO"><meta name="twitter:title" content="Spectre — live rooms, ephemeral messages and polls"><meta name="twitter:description" content="Open a public or private event room. Share messages, reply and vote in live polls, with host controls, optional browser encryption and no account."><meta name="twitter:image" content="https://spectre.micutu.com/static/social.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Spectre","url":"https://spectre.micutu.com/","description":"Open a public or private event room. Share messages, reply and vote in live polls, with host controls, optional browser encryption and no account.","inLanguage":"en"}</script></head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <div class="app-shell">
@@ -48,7 +48,7 @@
   </aside>
   <header class="topbar">
     <a class="mobile-brand" href="/" aria-label="Spectre home"><svg class="icon"><use href="/static/icons.svg#ghost"/></svg>spectre.</a>
-    <div class="breadcrumbs"><svg class="icon"><use href="/static/icons.svg#globe"/></svg><span>Public space</span><span class="crumb-slash">/</span><strong id="room-crumb">the lobby</strong></div>
+    <div class="breadcrumbs"><svg class="icon"><use href="/static/icons.svg#globe"/></svg><span id="space-label">Public space</span><span class="crumb-slash">/</span><strong id="room-crumb">the lobby</strong></div>
     <div class="topbar-actions"><select id="language-input" aria-label="Language"><option value="en">EN</option><option value="ro">RO</option></select><span class="connection" id="connection" role="status"><span class="live-dot"></span><span id="connection-text">Connecting</span></span><button class="button subtle small" id="share-room-btn" type="button" aria-label="Share room"><svg class="icon"><use href="/static/icons.svg#share"/></svg><span>Share room</span></button><button class="icon-button mobile-help" id="mobile-help-btn" type="button" aria-label="How it works"><svg class="icon"><use href="/static/icons.svg#question"/></svg></button></div>
   </header>
   <main id="main" tabindex="-1">

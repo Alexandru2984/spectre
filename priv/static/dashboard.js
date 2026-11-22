@@ -131,6 +131,7 @@
     state.watchController?.abort(); state.watchController = null;
     clearTimeout(state.presenceTimer); clearTimeout(state.watchRetry);
     state.roomMeta = null; state.locked = true; state.blocked = false; state.revision = -1; cancelReply();
+    $('#content-input').disabled = false; $('#poll-options').disabled = false;
     $('#send-btn').disabled = true;
     state.generation++;
     state.controller?.abort();
@@ -161,7 +162,7 @@
     const name = knownRooms[room] || '#' + room;
     $('#room-crumb').textContent = name.toLowerCase();
     $('#room-label').textContent = name;
-    document.title = room === 'lobby' && !new URLSearchParams(location.search).has('room') ? SpectreI18n.t('Spectre — ephemeral chat, polls and private event rooms') : name + ' · Spectre';
+    document.title = room === 'lobby' && !new URLSearchParams(location.search).has('room') ? SpectreI18n.t('Spectre — live rooms, ephemeral messages and polls') : name + ' · Spectre';
     $('#poll-editor').hidden = true;
     $('#kind-input').value = room === 'ideas' ? 'idea' : room === 'questions' ? 'question' : 'thought';
     restoreDraft();
@@ -772,6 +773,7 @@
     state.locked = true; state.blocked = true; state.messages = []; state.roomMeta = null; cancelReply(); state.watchController?.abort(); state.controller?.abort();
     $$('dialog[open]').forEach(dialog => dialog.close());
     $('#participants-list').replaceChildren(); $('#alias-input').value = ''; $('#poll-options').value = ''; $('#content-input').value = ''; updateCharacterCount();
+    $('#search-input').value = ''; $('#content-input').disabled = true; $('#poll-options').disabled = true;
     clearTimeout(state.timer); clearTimeout(state.presenceTimer); clearTimeout(state.watchRetry);
     $('#room-locked').textContent = message; $('#room-locked').hidden = false; $('#send-btn').disabled = true;
     $('#close-room-btn').hidden = true; $('#room-settings-btn').hidden = true; $('#room-topic').textContent = ''; $('#room-topic').hidden = true; $('#posting-policy').hidden = true; renderRecentRooms(); connection('error', 'Room unavailable'); document.body.classList.add('event-ended'); render();
@@ -788,6 +790,7 @@
     $('#room-label').textContent = knownRooms[meta.id] || meta.name;
     for (const node of [$('#room-label'), $('#room-crumb')]) { if (knownRooms[meta.id]) delete node.dataset.untranslated; else node.dataset.untranslated = ''; }
     $('#room-crumb').textContent = knownRooms[meta.id] || meta.name;
+    $('#space-label').textContent = meta.private ? 'Private event' : meta.expires_at ? 'Public event' : 'Public space';
     $('#room-security').textContent = meta.encrypted ? 'Private · E2EE text' : meta.private ? 'Private · access controlled' : 'Public room';
     $('.public-tag').textContent = meta.private ? 'PRIVATE ROOM' : 'PUBLIC ROOM';
     $('#compose-privacy').replaceChildren(icon(meta.private ? 'ghost' : 'globe'), document.createTextNode(meta.encrypted ? 'Message text is encrypted in your browser. Invitation holders can read it.' : meta.private ? 'Invitation holders can read this room. Text is processed by the server.' : 'Public by design. Share thoughts, never secrets.'));
@@ -864,7 +867,7 @@
   function dailyChallenge() { const day = Math.floor(Date.now() / 86400000); return challenges[day % challenges.length][SpectreI18n.language === 'ro' ? 1 : 0]; }
   function updateDaily() { $('#daily-topic').dataset.untranslated = ''; $('#daily-topic').textContent = dailyChallenge(); }
   $('#daily-use').addEventListener('click', () => { if (!$('#content-input').value.trim()) { $('#content-input').value = dailyChallenge() + '\n'; updateCharacterCount(); } $('#content-input').focus(); });
-  document.addEventListener('spectre:language', () => { if (!new URLSearchParams(location.search).has('room')) document.title = SpectreI18n.t('Spectre — ephemeral chat, polls and private event rooms'); updateDaily(); render(); });
+  document.addEventListener('spectre:language', () => { if (!new URLSearchParams(location.search).has('room')) document.title = SpectreI18n.t('Spectre — live rooms, ephemeral messages and polls'); updateDaily(); render(); });
   updateDaily();
   document.addEventListener('visibilitychange', () => { if (document.hidden) { state.watchController?.abort(); clearTimeout(state.presenceTimer); } else { heartbeat(); watchRoom(); } });
   window.addEventListener('pagehide', () => { state.watchController?.abort(); if (clientToken && !state.locked) fetch(roomPath('presence'), { method: 'DELETE', headers: authHeaders(), keepalive: true, credentials: 'omit' }).catch(() => {}); });

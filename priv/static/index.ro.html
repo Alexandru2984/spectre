@@ -3,27 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101412">
-  <title>Spectre — conversații efemere, sondaje și camere private</title>
-  <meta name="description" content="Trimite mesaje efemere, răspunsuri și sondaje în camere publice sau private. Actualizări live, criptare opțională în browser și fără cont.">
+  <meta name="theme-color" content="#141619">
+  <title>Spectre — camere live, mesaje efemere și sondaje</title>
+  <meta name="description" content="Deschide o cameră publică sau un eveniment privat. Trimite mesaje, răspunde și votează în sondaje live, cu setări pentru gazdă, criptare opțională și fără cont.">
   <link rel="canonical" href="https://spectre.micutu.com/ro">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Spectre">
-  <meta property="og:title" content="Spectre — conversații efemere, sondaje și camere private">
-  <meta property="og:description" content="Trimite mesaje efemere, răspunsuri și sondaje în camere publice sau private. Actualizări live, criptare opțională în browser și fără cont.">
+  <meta property="og:title" content="Spectre — camere live, mesaje efemere și sondaje">
+  <meta property="og:description" content="Deschide o cameră publică sau un eveniment privat. Trimite mesaje, răspunde și votează în sondaje live, cu setări pentru gazdă, criptare opțională și fără cont.">
   <meta property="og:url" content="https://spectre.micutu.com/ro">
   <meta property="og:image" content="https://spectre.micutu.com/static/social.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Spectre — Gânduri frumoase. Clipe scurte. Un loc pentru gânduri trecătoare.">
+  <meta property="og:image:alt" content="Spectre — Discută. Votează. Mergi mai departe. Camere live, mesaje și sondaje.">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/static/dashboard.css">
   <script src="/static/i18n.js" defer></script>
   <script src="/static/crypto.js" defer></script>
   <script src="/static/qrcode.js" defer></script>
   <script src="/static/dashboard.js" defer></script>
-<link rel="alternate" hreflang="en" href="https://spectre.micutu.com/"><link rel="alternate" hreflang="ro" href="https://spectre.micutu.com/ro"><link rel="alternate" hreflang="x-default" href="https://spectre.micutu.com/"><meta property="og:locale" content="ro_RO"><meta property="og:locale:alternate" content="en_US"><meta name="twitter:title" content="Spectre — conversații efemere, sondaje și camere private"><meta name="twitter:description" content="Trimite mesaje efemere, răspunsuri și sondaje în camere publice sau private. Actualizări live, criptare opțională în browser și fără cont."><meta name="twitter:image" content="https://spectre.micutu.com/static/social.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Spectre","url":"https://spectre.micutu.com/ro","description":"Trimite mesaje efemere, răspunsuri și sondaje în camere publice sau private. Actualizări live, criptare opțională în browser și fără cont.","inLanguage":"ro"}</script></head>
+<link rel="alternate" hreflang="en" href="https://spectre.micutu.com/"><link rel="alternate" hreflang="ro" href="https://spectre.micutu.com/ro"><link rel="alternate" hreflang="x-default" href="https://spectre.micutu.com/"><meta property="og:locale" content="ro_RO"><meta property="og:locale:alternate" content="en_US"><meta name="twitter:title" content="Spectre — camere live, mesaje efemere și sondaje"><meta name="twitter:description" content="Deschide o cameră publică sau un eveniment privat. Trimite mesaje, răspunde și votează în sondaje live, cu setări pentru gazdă, criptare opțională și fără cont."><meta name="twitter:image" content="https://spectre.micutu.com/static/social.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Spectre","url":"https://spectre.micutu.com/ro","description":"Deschide o cameră publică sau un eveniment privat. Trimite mesaje, răspunde și votează în sondaje live, cu setări pentru gazdă, criptare opțională și fără cont.","inLanguage":"ro"}</script></head>
 <body>
 <a class="skip-link" href="#main">Sari la conținut</a>
 <div class="app-shell">
@@ -48,7 +48,7 @@
   </aside>
   <header class="topbar">
     <a class="mobile-brand" href="/ro" aria-label="Acasă — Spectre"><svg class="icon"><use href="/static/icons.svg#ghost"/></svg>spectre.</a>
-    <div class="breadcrumbs"><svg class="icon"><use href="/static/icons.svg#globe"/></svg><span>Spațiu public</span><span class="crumb-slash">/</span><strong id="room-crumb">holul principal</strong></div>
+    <div class="breadcrumbs"><svg class="icon"><use href="/static/icons.svg#globe"/></svg><span id="space-label">Spațiu public</span><span class="crumb-slash">/</span><strong id="room-crumb">holul principal</strong></div>
     <div class="topbar-actions"><select id="language-input" aria-label="Limbă"><option value="en">EN</option><option value="ro">RO</option></select><span class="connection" id="connection" role="status"><span class="live-dot"></span><span id="connection-text">Se conectează</span></span><button class="button subtle small" id="share-room-btn" type="button" aria-label="Distribuie camera"><svg class="icon"><use href="/static/icons.svg#share"/></svg><span>Distribuie camera</span></button><button class="icon-button mobile-help" id="mobile-help-btn" type="button" aria-label="Cum funcționează"><svg class="icon"><use href="/static/icons.svg#question"/></svg></button></div>
   </header>
   <main id="main" tabindex="-1">

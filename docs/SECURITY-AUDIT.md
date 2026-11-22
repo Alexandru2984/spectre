@@ -1,6 +1,6 @@
 # Security audit and threat model
 
-This document preserves the original 2.0 assessment. Spectre 3 adds managed/private rooms and optional browser encryption; see FEATURE-PLAN.md for its trust boundaries and FEATURE-RELEASE.md for final verification.
+The opening assessment below preserves the original 2.0 review. Spectre 3 adds managed/private rooms and optional browser encryption; see FEATURE-PLAN.md for those trust boundaries. The 2026-11-22 reassessment at the end and PRODUCT-4-PLAN.md cover the current workspace release.
 
 Date: 2026-11-05. Assessment: source review, dependency-source inspection, bounded local checks, read-only examination of the application's service/vhost, and public response headers. This is not an independent penetration test or a host-wide compromise investigation. No user message bodies were read for the audit.
 
@@ -78,3 +78,26 @@ Solo runbook walkthrough: considered failed preview startup, failed proxy valida
 The first public browser smoke succeeded for posting/reaction/burn, but exposed pre-existing Cloudflare automatic beacon and JavaScript-detection injection blocked by the strict CSP. Public assets now request `Cache-Control: public, no-cache, no-transform` to stop supported edge body transformations without allowing third-party or inline code. API messages remain `no-store`. Cloudflare documents the beacon/no-transform interaction at https://developers.cloudflare.com/web-analytics/get-started/ and supported body transformations at https://developers.cloudflare.com/rules/configuration-rules/response-body-inspection/ . Security challenge behavior is controlled upstream and must be assessed separately; no global zone security setting is weakened.
 
 Final activation evidence is recorded in RELEASE-REPORT.md: the dedicated identity, inaccessible home/checkout, read-only release, disabled distribution listener, minimal access logging, nginx validation and public browser flow were verified. The final no-transform response prevented both observed automatic beacon and JavaScript-detection injections, and the public mobile check produced no browser errors. Residual risks and unconfigured external alerting remain as described above.
+
+## Reassessment: 2026-11-22
+
+Scope: all application routers/FFI/OTP state transitions, browser rendering/crypto/invitation/lifecycle code, dependency locks, checks/deployment scripts, active service isolation and this nginx vhost. Review and fixtures stayed separate from public user conversations. Cloudflare's response headers were observed; no zone-wide changes, authenticated Cloudflare configuration audit, other-app probing or host package upgrades were performed.
+
+No critical/high application authorization or code-execution vulnerability was demonstrated in this review. This is a bounded source/configuration review with regressions, not a certificate that none exists.
+
+| ID | Assessment | Resolution and evidence |
+| --- | --- | --- |
+| R01 | Medium: secondary moderator DOM copies survived message expiry; async report results could populate an obsolete room/dialog. | Expire previews from the current snapshot/deadline; clear dialog state on close/navigation/lock; reject obsolete results by request/generation. Browser regressions reproduce delayed responses and expiry. |
+| R02 | Medium: creator burn removed the parent locally while replies remained until another snapshot, especially when paused. | Cascade local parent/reply removal and prune secondary views immediately. Browser test burns a populated thread with updates paused. |
+| R03 | Medium: aborting fetch alone did not prevent an already-decoding snapshot from restoring a closed event. | Treat room closure as terminal until an explicit navigation; check that state after asynchronous decoding. Test deliberately suspends decoding until after a live closure notification. |
+| R04 | Low: the check server wrote a predictable shared `/tmp/spectre-check.log`, allowing a same-host actor to precreate/redirect the diagnostic artifact. | Use a private unpredictable mktemp log, quote its path and remove it in the cleanup trap. |
+| R05 | Abuse-control gap: owners could remove content but could not restrict new posting. | Owner-only settings, room-scoped questions/pause policies and bounded expiring per-token cooldowns. Tests cover wrong-room/absent/read-only capabilities, actual Retry-After/expiry, capacity exhaustion, owner bypass and live notifications. This does not prevent anonymous token rotation. |
+| R06 | Product/privacy defect: poll composer fields crossed room changes; message drafts were lost. | Bounded isolated per-room memory drafts, managed-event cleanup and explicit reload disclosure. Storage/room-switch/closure checks verify no draft/key persistence. |
+| R07 | Misleading documentation: SECURITY.md and an architecture sentence still described private rooms/E2EE as unavailable. | Align the current policy and public information with bearer invitations, optional text encryption and explicit metadata/identity/deletion limits. Keep old release reports dated as historical evidence. |
+| R08 | Release assurance gap: deployment preview did not exercise browser/a11y flows, and CI lacked current Hex advisory checks. | Check npm/Hex advisories, then exercise all browser, lifecycle and product suites against the exact isolated systemd shipment before switching production. |
+
+Text is still rendered through textContent/DOM nodes; no HTML insertion or remote user embed was introduced. Settings require the event owner's capability, plus private read authorization; an operator moderator cannot take over another owner's settings. Metadata and posting modes cannot change encryption/privacy/discovery/lifetime. All anonymous controls remain bounded and independent cleanup removes cooldowns without incoming traffic.
+
+The active baseline service was `spectre-link`, read-only under /opt with ProtectHome/ProtectSystem/NoNewPrivileges and a 512 MiB limit. Port 4000 was loopback-only; the app's checked-in vhost/proxy matched the active files. npm audit returned no advisories for the locked development tree and OSV returned no matches for 13 locked Hex packages on this date. The new [OSV inventory check](../scripts/audit_hex.py) sends only public package names/versions to [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/); it fails rather than reporting clean if the lookup is unavailable.
+
+Residual risks: bearer-link forwarding, copied plaintext/screenshots, malicious origin/browser code, anonymous poll manipulation/token rotation, public-content abuse, service flooding within/above infrastructure capacity, and memory/log copies beyond logical expiry. No external uptime alert destination, identity verification, independent crypto assessment, infrastructure-retention contract or host-wide vulnerability certification was added. Current release and activation evidence are in WORKSPACE-RELEASE.md.

@@ -89,6 +89,19 @@
     "Ask a question. Reply while the room is here.": "Pune o întrebare. Răspunde cât timp camera este deschisă.",
     "One win, one challenge, one thing you need.": "O reușită, o provocare, un lucru de care ai nevoie."
 });
+  Object.assign(ro, {
+    "Spectre — live rooms, ephemeral messages and polls": "Spectre — camere live, mesaje efemere și sondaje",
+    "Open a public or private event room. Share messages, reply and vote in live polls, with host controls, optional browser encryption and no account.": "Deschide o cameră publică sau un eveniment privat. Trimite mesaje, răspunde și votează în sondaje live, cu setări pentru gazdă, criptare opțională și fără cont.",
+    "Spectre — Talk. Vote. Move on. Live rooms, messages and polls.": "Spectre — Discută. Votează. Mergi mai departe. Camere live, mesaje și sondaje.",
+    "Run the room your way.": "Gestionează camera în stilul tău.",
+    "Start from a conversation, brainstorm, Q&A or team check-in template. Owners can update the topic, accept only questions and replies, pause participant posting or set a 5, 15 or 30 second cooldown. Host controls update live for participants; cooldowns use anonymous page tokens, not verified identities.": "Pornește de la un șablon de conversație, idei în echipă, întrebări sau discuție de echipă. Proprietarii pot actualiza subiectul, accepta doar întrebări și răspunsuri, opri temporar mesajele participanților sau seta un interval de 5, 15 ori 30 de secunde. Setările se actualizează live; intervalele folosesc identificatori anonimi de pagină, nu identități verificate.",
+    "Follow a conversation, keep your place.": "Urmărește conversația, păstrează-ți locul.",
+    "Read a full thread with chronological replies, find unanswered questions, sort by replies or focus the conversation. When switching rooms, unsent message and poll drafts stay separate in this tab. Reloading closes that temporary workspace.": "Citește conversația completă cu răspunsuri cronologice, găsește întrebările fără răspuns, sortează după răspunsuri sau activează afișarea concentrată. Când schimbi camera, ciornele mesajelor și sondajelor rămân separate în această filă. Reîncărcarea închide acest spațiu temporar.",
+    "Up to 12 unsent room drafts are held only in this tab. Switching rooms restores that room’s draft, including poll choices and reply context. Reloading loses drafts; closing or expiring a managed event clears its draft and invitation from the active workspace. The server does not receive an unsent draft.": "Până la 12 ciorne netrimise sunt păstrate doar în această filă. Schimbarea camerei restaurează ciorna ei, inclusiv opțiunile sondajului și contextul răspunsului. Reîncărcarea pierde ciornele; închiderea sau expirarea unui eveniment șterge ciorna și invitația din spațiul activ. Serverul nu primește ciornele netrimise.",
+    "Updated 22 November 2026": "Actualizat la 22 noiembrie 2026",
+    "Back to the room": "Înapoi în cameră"
+});
+  Object.assign(ro, {'Private event':'Eveniment privat','Public event':'Eveniment public'});
   const originals = new WeakMap(), attributes = new WeakMap();
   const explicitRomanian = /^\/ro(?:\/|$)/.test(location.pathname);
   let language = explicitRomanian ? 'ro' : 'en';

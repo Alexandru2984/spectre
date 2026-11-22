@@ -30,7 +30,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install browser
         run: npx playwright install --with-deps chromium
-      - name: Check compiled release, API and browser
+      - name: Check release, advisories, authorization, accessibility and product flows
         run: ./scripts/check.sh
       - name: Preserve browser screenshots
         if: always()

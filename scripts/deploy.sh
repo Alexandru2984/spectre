@@ -13,6 +13,9 @@ sudo -n true
 python3 scripts/require_free_port.py 4402
 export ERL_FLAGS="${ERL_FLAGS:-+S 2:2 +SDcpu 1 +SDio 1 +A 2}"
 node scripts/build-locales.mjs --check
+npm run check:js
+npm audit --audit-level=high
+python3 scripts/audit_hex.py
 gleam format --check src test
 gleam test
 gleam export erlang-shipment
@@ -106,6 +109,10 @@ BASE_URL=http://127.0.0.1:4402 python3 scripts/seo_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/http_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/feature_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/controls_smoke.py
+BASE_URL=http://127.0.0.1:4402 node scripts/browser_smoke.mjs
+BASE_URL=http://127.0.0.1:4402 node scripts/browser_features.mjs
+BASE_URL=http://127.0.0.1:4402 node scripts/browser_lifecycle.mjs
+BASE_URL=http://127.0.0.1:4402 node scripts/browser_product.mjs
 curl -fsS --max-time 5 http://127.0.0.1:4402/ >/dev/null
 cleanup_preview
 sudo -n install -d -m 0700 "$spectre_backup_dir"

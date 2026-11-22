@@ -1,1 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#101412"/><path d="M65 535h1070" stroke="#2a342d"/><rect x="68" y="58" width="40" height="40" rx="12" fill="#b8edc6"/><g transform="translate(74 63) scale(1.2)" fill="none" stroke="#16291b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V10a8 8 0 0 1 16 0v11l-4-3-4 3-4-3-4 3Z"/><path d="M9 10v2m6-2v2"/></g><text x="122" y="89" fill="#f0f0e8" font-family="sans-serif" font-size="35" font-weight="600" letter-spacing="-1.5">spectre.</text><text x="68" y="178" fill="#b8edc6" font-family="monospace" font-size="12" letter-spacing="3">HERE FOR A MOMENT</text><text x="62" y="281" fill="#f0f0e8" font-family="sans-serif" font-size="83" letter-spacing="-4">Good thoughts.</text><text x="65" y="377" fill="#b8edc6" font-family="Georgia, serif" font-size="94" font-style="italic" letter-spacing="-3">Short lives.</text><text x="68" y="439" fill="#a0aba1" font-family="sans-serif" font-size="20">A space for fleeting thoughts. No account. No archive. Just now.</text><text x="68" y="577" fill="#8a988e" font-family="monospace" font-size="16">spectre.micutu.com</text><g transform="translate(910 295)"><g fill="none" stroke="#b8edc6" opacity=".17"><ellipse rx="175" ry="80" transform="rotate(-25)"/><ellipse rx="145" ry="128" transform="rotate(32)"/><circle r="140" stroke-dasharray="3 9"/></g><g fill="none" stroke="#b8edc6" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-8)"><path d="M-52 54v-78a52 52 0 0 1 104 0v78L26 37 0 56l-26-19-26 17Z"/><path d="M-17-18v12m34-12v12"/></g><circle cx="-139" cy="64" r="7" fill="#b8edc6"/><circle cx="119" cy="-84" r="6" fill="#cbb7ed"/><path d="M100 92v24m-12-12h24M-100-112v16m-8-8h16" stroke="#b8edc6" stroke-width="2"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#141619"/>
+  <path d="M64 532h1072" stroke="#353b45"/>
+  <rect x="64" y="55" width="42" height="46" rx="5" fill="none" stroke="#ffb36b"/>
+  <g transform="translate(72 62) scale(1.15)" fill="none" stroke="#ffb36b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V10a8 8 0 0 1 16 0v11l-4-3-4 3-4-3-4 3Z"/><path d="M9 10v2m6-2v2"/></g>
+  <text x="121" y="90" fill="#f2f4f7" font-family="sans-serif" font-size="38" font-weight="700" letter-spacing="-1.5">spectre<tspan fill="#ffb36b">.</tspan></text>
+  <text x="64" y="172" fill="#ffb36b" font-family="monospace" font-size="15" letter-spacing="2">LIVE ROOMS. NO BACKLOG.</text>
+  <text x="59" y="273" fill="#f2f4f7" font-family="sans-serif" font-size="84" font-weight="650" letter-spacing="-4">Talk. Vote.</text>
+  <text x="59" y="369" fill="#ffb36b" font-family="sans-serif" font-size="84" font-weight="650" letter-spacing="-4">Move on.</text>
+  <text x="64" y="438" fill="#b0b8c4" font-family="sans-serif" font-size="22">A conversation that ends. No account needed.</text>
+  <rect x="746" y="153" width="390" height="307" rx="6" fill="#1c1f24" stroke="#353b45"/>
+  <text x="772" y="195" fill="#ffb36b" font-family="monospace" font-size="14">YOUR ROOM / YOUR MOMENT</text>
+  <path d="M772 218h338" stroke="#353b45"/>
+  <text x="772" y="264" fill="#f2f4f7" font-family="sans-serif" font-size="26">One good question.</text>
+  <text x="772" y="310" fill="#b0b8c4" font-family="sans-serif" font-size="18">Replies. Live polls. Private invitations.</text>
+  <path d="M772 354h338" stroke="#353b45" stroke-width="4"/>
+  <path d="M772 354h214" stroke="#ffb36b" stroke-width="4"/>
+  <text x="772" y="409" fill="#b0b8c4" font-family="monospace" font-size="16">HERE FOR UP TO 5 MINUTES</text>
+  <text x="64" y="578" fill="#b0b8c4" font-family="monospace" font-size="17">spectre.micutu.com</text>
+  <text x="1136" y="578" fill="#b0b8c4" font-family="monospace" font-size="15" text-anchor="end">EN / RO</text>
+</svg>

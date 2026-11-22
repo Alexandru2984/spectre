@@ -1,6 +1,6 @@
 # Spectre-Link: product and hardening plan
 
-Current iteration: [session tools release](SESSION-TOOLS-RELEASE.md) and [session tools plan](SESSION-TOOLS-PLAN.md). The [workspace release](WORKSPACE-RELEASE.md), dated baseline and earlier delivery history below are retained for context.
+Current interface iteration: [design release](DESIGN-RELEASE.md). The [session tools release](SESSION-TOOLS-RELEASE.md), [session tools plan](SESSION-TOOLS-PLAN.md), [workspace release](WORKSPACE-RELEASE.md), dated baseline and earlier delivery history below are retained for context.
 
 Date: 2026-11-05. Scope: this application, its systemd service, and its nginx vhost. Other VPS applications and global Cloudflare settings are outside the change set.
 

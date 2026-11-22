@@ -16,6 +16,7 @@ Share a thought, idea or question in a public room. Choose a lifetime, react whi
 - Complete chronological thread views, explicit question resolution and unresolved-question filtering, sorting by replies, search through aliases/poll choices and conversation focus mode.
 - Live room spotlight, creator/moderator poll closure and reopening with server-enforced vote freezing, visual vote bars and a read-only presentation with keyboard navigation. Spotlight and status never extend message lifetime; metadata remains server-visible.
 - Room-first interface with direct message labels, a flat conversation list, optional conversation prompts and advanced actions under Room tools. The actual room name is the main heading; both themes and RO/EN remain available.
+- Reading view hides the composer and widens the conversation. Return to an unchanged draft with the writing button, reply, N shortcut or mobile compose control. A room-scoped hidden-message notice supports undoing the latest hide and restoring live messages without extending expiry.
 - Up to 12 room drafts held only in page memory, recent-room navigation and a responsive workspace with a mobile compose shortcut. Reloading loses drafts; managed-event expiry/closure clears its draft.
 - Strict CSP, local assets, bounded OTP memory, origin/framing validation, independent expiry and dedicated read-only production identity.
 

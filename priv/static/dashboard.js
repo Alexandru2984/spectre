@@ -305,7 +305,7 @@
     for (const [id, capability] of state.burnKeys) if (capability.expires <= timestamp) state.burnKeys.delete(id);
     for (const [id, reaction] of state.myReactions) if (reaction.expires <= timestamp) state.myReactions.delete(id);
     for (const [id, vote] of state.myPollVotes) if (vote.expires <= timestamp) state.myPollVotes.delete(id);
-    for (const [id, expires] of state.hidden) if (expires <= timestamp) state.hidden.delete(id);
+    for (const [id, entry] of state.hidden) if (entry.expires <= timestamp) state.hidden.delete(id);
     for (const [room, cap] of state.capabilities) if (cap.expires && cap.expires <= timestamp) { state.capabilities.delete(room); state.aliases.delete(room); }
     for (const [room, draft] of state.drafts) if (draft.expires && draft.expires <= timestamp) state.drafts.delete(room);
     for (const [room, meta] of state.recentRooms) if (meta.expires_at && meta.expires_at <= timestamp) { state.recentRooms.delete(room); state.drafts.delete(room); state.cooldowns.delete(room); }
@@ -398,8 +398,20 @@
       state.filter = 'all'; $('#search-input').value = '';
       $$('[data-filter]').forEach(button => button.setAttribute('aria-pressed', button.dataset.filter === 'all'));
       render();
-    } else if (state.hidden.size) { state.hidden.clear(); render(); } else $('#content-input').focus();
+    } else if (hiddenInRoom().length) restoreHidden(); else openComposer();
   });
+  function hiddenInRoom() {
+    const alive = new Set(state.messages.filter(message => timeLeft(message) > 0).map(message => message.id));
+    return [...state.hidden].filter(([id, entry]) => entry.room === state.room && entry.expires > now() && alive.has(id)).map(([id]) => id);
+  }
+  function restoreHidden(id) {
+    const moveFocus = document.activeElement?.closest('#hidden-notice, #empty-action');
+    for (const hidden of hiddenInRoom()) if (!id || hidden === id) state.hidden.delete(hidden);
+    render();
+    if (moveFocus) (hiddenInRoom().length ? $('#undo-hide') : $('#stream-title')).focus({ preventScroll: true });
+  }
+  $('#undo-hide').addEventListener('click', () => restoreHidden(hiddenInRoom().at(-1)));
+  $('#restore-hidden').addEventListener('click', () => restoreHidden());
   $$('[data-filter]').forEach(button => button.addEventListener('click', () => {
     state.filter = button.dataset.filter;
     $$('[data-filter]').forEach(item => item.setAttribute('aria-pressed', item === button)); render();
@@ -469,6 +481,9 @@
   }
   function render() {
     const messages = visibleMessages();
+    const hiddenCount = hiddenInRoom().length;
+    $('#hidden-notice').hidden = !hiddenCount;
+    setNodeText($('#hidden-count'), SpectreI18n.t('Hidden in this room: ' + hiddenCount));
     const active = state.messages.filter(message => timeLeft(message) > 0).length;
     $('#active-count').textContent = active;
     $('#feed-count').textContent = messages.length;
@@ -476,7 +491,7 @@
     $('#empty-state').hidden = messages.length > 0;
     $('#empty-title').textContent = noMatch ? 'No matching messages' : 'No messages yet';
     $('#empty-description').textContent = noMatch ? 'Clear the search or choose another filter.' : 'Send the first message or share this room.';
-    $('#empty-action').firstChild.textContent = state.hidden.size && state.filter === 'all' && !$('#search-input').value ? 'Show hidden messages' : noMatch ? 'Clear filters' : 'Write a message';
+    $('#empty-action').firstChild.textContent = hiddenCount && state.filter === 'all' && !$('#search-input').value ? 'Show hidden messages' : noMatch ? 'Clear filters' : 'Write a message';
     $('#feed').hidden = state.view !== 'feed' || !messages.length;
     $('#constellation-panel').hidden = state.view !== 'constellation' || !messages.length;
     if ($('#constellation-panel').hidden) clearConstellation();
@@ -663,7 +678,7 @@
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && event.target === $('#content-input')) { event.preventDefault(); $('#message-form').requestSubmit(); return; }
     if (typing || $('dialog[open]') || event.ctrlKey || event.metaKey) return;
     if (event.key === '/') { event.preventDefault(); $('#search-input').focus(); }
-    if (event.key.toLowerCase() === 'n') { event.preventDefault(); $('#content-input').focus(); }
+    if (event.key.toLowerCase() === 'n') { event.preventDefault(); openComposer(); }
     if (event.key === '?') { event.preventDefault(); showDialog('#help-dialog'); }
   });
   // Server-side rendering contains no room messages. Only cosmetic preferences
@@ -726,7 +741,7 @@
     if (!parent || timeLeft(parent) <= 0) { toast('That conversation has ended.'); return; }
     state.replyTo = parent.id; $('#reply-preview').textContent = parent.content.slice(0, 120); $('#reply-context').hidden = false;
     updatePostingControls();
-    closeDialog('#message-dialog'); $('#content-input').focus(); $('#content-input').scrollIntoView({ block: 'center', behavior: 'auto' });
+    closeDialog('#message-dialog'); openComposer();
   }
   function repliesTo(id) { return state.messages.filter(message => message.parent_id === id && timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(id)).sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)); }
   function addMessageFeatures(card, message, detail = false, presentation = false) {
@@ -763,7 +778,7 @@
     action('Reply', () => replyTo(message));
     const children = repliesTo(message.id);
     if (!message.parent_id && !detail) action(children.length ? 'Thread (' + children.length + ')' : 'Open thread', () => openMessage(message.id));
-    action('Hide', () => { state.hidden.set(message.id, message.expires_at); if ($('#message-dialog').open) closeDialog('#message-dialog'); render(); });
+    action('Hide', () => { state.hidden.set(message.id, { room: state.room, expires: message.expires_at }); if ($('#message-dialog').open) closeDialog('#message-dialog'); render(); $('#undo-hide').focus({ preventScroll: true }); });
     action('Report', () => { state.reportId = message.id; showDialog('#report-dialog'); });
     if (state.roomMeta?.can_moderate && !state.burnKeys.has(message.id)) action('Remove', () => removeAsModerator(message.id));
     const canManage = state.burnKeys.has(message.id) || state.roomMeta?.can_moderate;
@@ -840,6 +855,7 @@
   });
   function lockRoom(message) {
     $('#room-tools').open = false;
+    for (const [id, entry] of state.hidden) if (entry.room === state.room) state.hidden.delete(id);
     for (const item of state.messages) { state.burnKeys.delete(item.id); state.myReactions.delete(item.id); state.myPollVotes.delete(item.id); state.hidden.delete(item.id); }
     state.alias = '';
     state.drafts.delete(state.room); state.recentRooms.delete(state.room); state.cooldowns.delete(state.room); state.capabilities.delete(state.room); state.aliases.delete(state.room);
@@ -1116,6 +1132,7 @@
     const remaining = meta?.can_moderate ? 0 : Math.max(0, Math.ceil(((state.cooldowns.get(state.room) || 0) - now()) / 1000));
     const paused = meta?.posting_mode === 'paused' && !meta.can_moderate;
     $('#send-btn').disabled = state.locked || state.sending || Boolean(meta?.encrypted && !capabilities().key) || paused || remaining > 0;
+    $('#reading-compose-btn').disabled = state.locked;
     const label = remaining ? 'Wait ' + remaining + 's' : 'Send message';
     if ($('#send-btn span').textContent !== SpectreI18n.t(label)) $('#send-btn span').textContent = label;
     const policy = meta?.posting_mode === 'paused' ? 'The host has paused new messages.' : meta?.posting_mode === 'questions' ? 'Questions and replies only.' : '';
@@ -1153,17 +1170,29 @@
     $('#room-input').value = SpectreI18n.t(name); $('#room-topic-input').value = SpectreI18n.t(topic); $('#room-duration').value = String(minutes);
     $$('[data-template]').forEach(item => item.setAttribute('aria-pressed', item === button));
   }));
-  $('#focus-btn').addEventListener('click', () => {
-    const focused = document.body.classList.toggle('focus-mode');
-    $('#focus-btn').setAttribute('aria-pressed', focused);
-    $('#focus-btn').setAttribute('aria-label', focused ? 'Leave conversation focus' : 'Focus on the conversation');
+  function setReadingMode(active) {
+    if (active && document.activeElement?.closest('.composer')) $('#focus-btn').focus({ preventScroll: true });
+    document.body.classList.toggle('focus-mode', active);
+    $('#reading-controls').hidden = !active;
+    $('#focus-btn').setAttribute('aria-pressed', active);
+    const label = active ? 'Leave reading view' : 'Reading view';
+    $('#focus-btn').setAttribute('aria-label', label); $('#focus-btn').setAttribute('title', label);
     resizeCanvas(); drawCanvas();
-  });
-  $('#mobile-compose-btn').addEventListener('click', () => {
+  }
+  function openComposer() {
+    setReadingMode(false);
     $('.composer').scrollIntoView({ block: 'start', behavior: 'auto' }); $('#content-input').focus({ preventScroll: true });
-  });
+  }
+  $('#focus-btn').addEventListener('click', () => setReadingMode(!document.body.classList.contains('focus-mode')));
+  $('#reading-compose-btn').addEventListener('click', openComposer);
+  $('#mobile-compose-btn').addEventListener('click', openComposer);
   if (typeof IntersectionObserver === 'function') {
-    new IntersectionObserver(entries => { $('#mobile-compose-btn').hidden = entries[0].isIntersecting; }, { threshold: 0.1 }).observe($('.composer'));
+    const visibleWriting = new Map();
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) visibleWriting.set(entry.target, entry.isIntersecting);
+      $('#mobile-compose-btn').hidden = [...visibleWriting.values()].some(Boolean);
+    }, { threshold: 0.1 });
+    observer.observe($('.composer')); observer.observe($('#reading-controls'));
   }
 
   const initialRoom = new URLSearchParams(location.search).get('room') || 'lobby';

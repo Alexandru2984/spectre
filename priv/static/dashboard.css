@@ -289,7 +289,10 @@ select.dialog-input { padding-right: 36px; }
 .event-ended .composer { opacity: .65; }
 .event-ended .mobile-compose { display: none; }
 .mobile-compose { display: none; }
-.focus-mode .prompt-panel, .focus-mode .product-context, .focus-mode main > .page-footer { display: none; }
+.focus-mode .composer, .focus-mode .product-context, .focus-mode main > .page-footer { display: none; }
+.focus-mode .stream-section { grid-column: 1 / -1; width: 100%; max-width: 960px; margin-inline: auto; }
+.reading-controls, .hidden-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.reading-controls > span, .hidden-notice > span { flex: 1 1 180px; }
 .focus-mode .room-strip { border-top: 0; padding-top: 0; }
 .focus-mode .collaboration-bar { margin-bottom: 24px; }
 .info-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; max-width: 1000px; padding: 24px; margin: auto; border-bottom: 1px solid var(--line); }

@@ -214,6 +214,11 @@
   Object.assign(ro, {"Search messages": "Caută mesaje", "Messages in constellation view": "Mesaje în constelație", "Open a message from the constellation": "Deschide un mesaj din constelație", "Public rooms": "Camere publice", "Messages, replies and polls.": "Mesaje, răspunsuri și sondaje."});
   Object.assign(ro, {"Messages": "Mesaje", "Find rooms": "Găsește camere", "Room tools": "Comenzi", "1 active session": "1 sesiune activă"});
   Object.assign(ro, {'Spectre — temporary chat rooms, replies and live polls.':'Spectre — camere temporare de conversație, răspunsuri și sondaje live.'});
+  Object.assign(ro, {"Reading view": "Mod de citire", "Leave reading view": "Închide modul de citire", "Undo last hide": "Anulează ultima ascundere"});
+  Object.assign(ro, {
+    "Reading view gives the conversation more space and keeps your draft intact. Return to writing with a reply, the writing button or the N shortcut.": "Modul de citire oferă conversației mai mult spațiu și îți păstrează ciorna. Revino la scris printr-un răspuns, butonul de scriere sau tasta N.",
+    "Hiding affects only this tab. Undo the latest hide or show hidden messages in the current room while they are still alive.": "Ascunderea se aplică doar în această filă. Anulează ultima ascundere sau afișează mesajele ascunse din camera curentă cât timp nu au expirat."
+  });
   const originals = new WeakMap(), attributes = new WeakMap();
   const explicitRomanian = /^\/ro(?:\/|$)/.test(location.pathname);
   let language = explicitRomanian ? 'ro' : 'en';
@@ -221,6 +226,7 @@
   const reverse = new Map(Object.entries(ro).map(([en,translated]) => [translated,en]));
   const canonical = text => reverse.has(text.trim()) ? text.replace(text.trim(),reverse.get(text.trim())) : text;
   const patterns = [
+    [/^Hidden in this room: (\d+)$/,m=>'Ascunse în această cameră: '+m[1]],
     [/^Message sent to #(.+)\.$/,m=>'Mesaj trimis în #'+m[1]+'.'],
     [/^(\d+) of (\d+)$/,m=>m[1]+' din '+m[2]],
     [/^Replies \((\d+)\)$/,m=>'Răspunsuri ('+m[1]+')'],

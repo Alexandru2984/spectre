@@ -28,7 +28,21 @@ Screenshots are local ignored artifacts under `test-results/`, including `produc
 
 ## Activation
 
-Production activation and public verification are recorded below after the isolated release gate succeeds. The previous production shipment at review start was `2a0aff051f40-20261105T122347Z`. Restarting this ephemeral application clears existing live messages/events; there is no content backup or database migration. The deploy script preserves the old release and root-restricted configuration backup for rollback.
+The isolated systemd shipment passed all 10 unit tests, 133 HTTP checks, SEO checks and all four browser suites before activation. nginx configuration validation passed before its graceful reload. The production switch completed successfully:
+
+- Runtime source commit: `cd35aa0bbf25` (subsequent documentation commits do not change the runtime).
+- Active release: `/opt/spectre-link/releases/cd35aa0bbf25-20261122T131459Z`.
+- Root-restricted configuration backup: `/var/backups/spectre-link/cd35aa0bbf25-20261122T131459Z`.
+- Previous release/rollback target: `/opt/spectre-link/releases/2a0aff051f40-20261105T122347Z`.
+- Observed service: active/running under `spectre-link:spectre-link`, zero automatic restarts, approximately 47 MiB current memory just after activation. HTTP remains `127.0.0.1:4000`; temporary 4400/4402 and former distribution 9100 have no listeners.
+
+Public verification through Cloudflare/nginx passed for all six static EN/RO pages: 200 responses, correct language, security headers and no observed automatic analytics/challenge script injection. Public JS/CSS/i18n/favicon/social-image hashes match the committed files. A Romanian room query retains noindex. Actual public gzip payloads measured 22,652 bytes for dashboard.js (69,372 source bytes) and 9,281 for dashboard.css (35,004 source bytes); this is a transfer-size observation, not a field Core Web Vitals score.
+
+A separate public two-browser verification created one private encrypted event using a fresh unlisted starting room. It verified fragment invitation handling, ciphertext-only posting, peer delivery, encrypted reply, the full thread, live host pause, Romanian mobile layout/axe, owner closure and immediate peer lock/content removal. No JavaScript/CSP errors were observed. The synthetic event was closed; existing user conversation content was not inspected. Its mobile screenshot is `test-results/production-workspace-mobile.png`.
+
+A raw Python urllib request received a Cloudflare 403, while curl and the normal Chromium journeys above succeeded. No Cloudflare account settings were changed to weaken that behavior; generic automated-client/edge-policy coverage is not claimed.
+
+Restarting the ephemeral application cleared the previous live state as documented; no content backup or database migration was created. The previous release remains available for rollback using OPERATIONS.md. No Git push, other application restart, new credential export, analytics integration or DNS/tunnel configuration change was performed.
 
 ## Remaining product/operational work
 

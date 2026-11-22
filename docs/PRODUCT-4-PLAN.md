@@ -41,3 +41,7 @@ Baseline checks passed: nine Gleam tests, 69 HTTP checks, 42 feature/authorizati
 After observing real use: opt-in browser notifications, accessible presentation mode for workshops, room-specific moderation queues, an operator-owned uptime alert destination, and privacy-preserving aggregate performance measurements. Push notifications, accounts, persistent history, uploads, analytics vendors and distributed replication require their own retention/access design; they are not silently introduced here. Search Console setup and actual indexing/rankings require operator-owned access and observation.
 
 This is a source/configuration review plus bounded tests, not an independent penetration test, host-wide compromise investigation or cryptographic certification. Traffic flooding, participant screenshots, malicious invitation holders, anonymous vote manipulation and infrastructure retention remain explicit limits.
+
+## Completion evidence
+
+All five delivery stages are complete for this iteration. WORKSPACE-RELEASE.md records the shipped behavior, exact local/preview/public checks, active source/release, backup, rollback target and remaining external measurement work. The new 3.1 runtime is active at https://spectre.micutu.com. CI is configured and passed locally; no remote GitHub run is claimed without a push.

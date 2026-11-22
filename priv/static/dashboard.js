@@ -8,7 +8,7 @@
   const kinds = { thought: ['A thought', 'spark'], idea: ['An idea', 'bulb'], question: ['A question', 'question'], poll: ['A poll', 'list'] };
   const reactionNames = { spark: 'Inspired', heart: 'Love', curious: 'Curious' };
   const state = {
-    capabilities: new Map(), aliases: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, sending: false, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
+    capabilities: new Map(), aliases: new Map(), hidden: new Map(), myPollVotes: new Map(), replyTo: '', alias: '', roomMeta: null, locked: true, blocked: false, sending: false, reportRequest: 0, revision: -1, watchController: null, presenceTimer: null, watchRetry: null,
     room: 'lobby', messages: [], burnKeys: new Map(), myReactions: new Map(),
     ttl: 30000, filter: 'all', view: 'feed', paused: false, failures: 0,
     clockOffset: 0, timer: null, toastTimer: null, syncing: false, generation: 0,
@@ -129,7 +129,7 @@
     readInvitation(room);
     state.watchController?.abort(); state.watchController = null;
     clearTimeout(state.presenceTimer); clearTimeout(state.watchRetry);
-    state.roomMeta = null; state.locked = true; state.revision = -1; cancelReply();
+    state.roomMeta = null; state.locked = true; state.blocked = false; state.revision = -1; cancelReply();
     $('#send-btn').disabled = true;
     state.generation++;
     state.controller?.abort();
@@ -230,6 +230,7 @@
       $('#offline-banner').hidden = true;
       $('#sync-label').textContent = 'Live updates · connected';
       cleanCapabilities();
+      pruneSecondaryViews();
       render();
     } catch (error) {
       if (generation !== state.generation || state.paused) return;
@@ -241,7 +242,7 @@
       $('#sync-label').textContent = error.status === 429 ? 'Taking a breather · retrying shortly' : 'Reconnecting · your draft stays here';
     } finally {
       clearTimeout(timeout);
-      if (generation === state.generation) { state.syncing = false; if (!state.locked) { schedule(state.failures ? delay : 20000); watchRoom(); } }
+      if (generation === state.generation) { state.syncing = false; if (!state.blocked) { schedule(state.failures ? delay : 20000); watchRoom(); } }
     }
   }
   function cleanCapabilities() {
@@ -448,7 +449,7 @@
     try {
       await api(apiPath('/' + encodeURIComponent(id)), { method: 'DELETE', headers: { 'x-burn-key': capability.key }, signal: AbortSignal.timeout(10000) });
       state.burnKeys.delete(id);
-      if (generation === state.generation) { state.messages = state.messages.filter(message => message.id !== id); render(); }
+      if (generation === state.generation) { removeLocalMessage(id); render(); }
       $('#burn-dialog').close(); toast('Gone. A little space for the next thought.');
     } catch (error) { toast(error.status ? error.message : 'Couldn’t confirm the burn. Please try again.'); }
     finally { $('#confirm-burn').disabled = false; }
@@ -481,7 +482,7 @@
   setInterval(() => {
     const count = state.messages.length;
     state.messages = state.messages.filter(message => timeLeft(message) > 0);
-    cleanCapabilities(); tickEvent();
+    cleanCapabilities(); tickEvent(); pruneSecondaryViews();
     if (state.replyTo && !state.messages.some(message => message.id === state.replyTo)) cancelReply();
     if (count !== state.messages.length) render(); else tickCards();
   }, 500);
@@ -632,7 +633,7 @@
     } catch (error) { $('#room-create-error').textContent = error.message; }
     finally { button.disabled = false; }
   }
-  function cancelReply() { state.replyTo = ''; $('#reply-context').hidden = true; }
+  function cancelReply() { state.replyTo = ''; $('#reply-context').hidden = true; $('#reply-preview').textContent = ''; }
   $('#cancel-reply').addEventListener('click', cancelReply);
   $('#kind-input').addEventListener('change', () => { $('#poll-editor').hidden = $('#kind-input').value !== 'poll'; });
   function replyTo(message) {
@@ -694,21 +695,44 @@
     loadReports();
   });
   $('#copy-owner-key').addEventListener('click', () => { const key = capabilities().owner; if (key) copyText(key, 'Owner key copied. Keep it private; it can moderate or close your room.'); else toast('No owner key is available in this tab.'); });
+  $('#moderator-dialog').addEventListener('close', () => {
+    state.reportRequest++;
+    $('#moderator-key').value = ''; $('#moderator-feedback').textContent = ''; $('#moderator-reports').replaceChildren();
+  });
+  $('#report-dialog').addEventListener('close', () => { state.reportId = null; });
+  function pruneSecondaryViews() {
+    const active = new Set(state.messages.filter(message => timeLeft(message) > 0).map(message => message.id));
+    $$('#moderator-reports .moderation-report').forEach(node => {
+      if (!active.has(node.dataset.messageId) || Number(node.dataset.expiresAt) <= now()) node.remove();
+    });
+    if (state.replyTo && !active.has(state.replyTo)) cancelReply();
+    if (state.reportId && !active.has(state.reportId)) $('#report-dialog').close();
+    if (state.burnId && !active.has(state.burnId)) { state.burnId = null; $('#burn-dialog').close(); }
+  }
+  function removeLocalMessage(id) {
+    state.messages = state.messages.filter(message => message.id !== id && message.parent_id !== id);
+    pruneSecondaryViews();
+  }
   async function loadReports() {
+    const generation = state.generation, request = ++state.reportRequest;
     try {
       const { data } = await api(roomPath('reports'), { signal: AbortSignal.timeout(10000) });
+      if (generation !== state.generation || request !== state.reportRequest || !$('#moderator-dialog').open || state.locked) return;
       $('#moderator-feedback').textContent = data.length ? 'Active reports: ' + data.length : 'No active reports.';
       $('#moderator-reports').replaceChildren(...data.map(report => {
         const div = element('div', 'moderation-report'); const text = element('p', '', report.message.content); text.dataset.untranslated = '';
+        div.dataset.messageId = report.id; div.dataset.expiresAt = report.message.expires_at;
         const remove = element('button', 'button danger', 'Remove message'); remove.type = 'button'; remove.addEventListener('click', async () => { await removeAsModerator(report.id); loadReports(); });
         div.append(element('span', 'tiny-label', report.count + ' reports'), text, remove); return div;
       }));
+      pruneSecondaryViews();
       await syncRoom();
-    } catch (error) { $('#moderator-feedback').textContent = error.message; }
+    } catch (error) { if (generation === state.generation && request === state.reportRequest && $('#moderator-dialog').open) $('#moderator-feedback').textContent = error.message; }
   }
   async function removeAsModerator(id) {
-    try { await api(apiPath('/' + id), { method: 'DELETE', signal: AbortSignal.timeout(10000) }); state.messages = state.messages.filter(item => item.id !== id && item.parent_id !== id); render(); toast('Message removed.'); }
-    catch (error) { toast(error.message); }
+    const generation = state.generation;
+    try { await api(apiPath('/' + id), { method: 'DELETE', signal: AbortSignal.timeout(10000) }); if (generation !== state.generation) return; removeLocalMessage(id); render(); toast('Message removed.'); }
+    catch (error) { if (generation === state.generation) toast(error.message); }
   }
   $('#close-room-btn').addEventListener('click', () => showDialog('#close-room-dialog'));
   $('#confirm-close-room').addEventListener('click', async () => {
@@ -716,7 +740,9 @@
     catch (error) { toast(error.message); }
   });
   function lockRoom(message) {
-    state.locked = true; state.messages = []; state.roomMeta = null; cancelReply(); state.watchController?.abort();
+    state.locked = true; state.blocked = true; state.messages = []; state.roomMeta = null; cancelReply(); state.watchController?.abort(); state.controller?.abort();
+    $$('dialog[open]').forEach(dialog => dialog.close());
+    $('#participants-list').replaceChildren(); $('#alias-input').value = ''; $('#poll-options').value = ''; $('#content-input').value = ''; updateCharacterCount();
     clearTimeout(state.timer); clearTimeout(state.presenceTimer); clearTimeout(state.watchRetry);
     $('#room-locked').textContent = message; $('#room-locked').hidden = false; $('#send-btn').disabled = true;
     $('#close-room-btn').hidden = true; connection('error', 'Room unavailable'); document.body.classList.add('event-ended'); render();

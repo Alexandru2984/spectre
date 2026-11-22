@@ -12,18 +12,20 @@ cmp priv/static/qrcode.js node_modules/qrcode-generator/dist/qrcode.js
 npm audit --audit-level=high
 gleam test
 gleam export erlang-shipment
-PORT=4400 build/erlang-shipment/entrypoint.sh run > /tmp/spectre-check.log 2>&1 &
+spectre_check_log="$(mktemp "${TMPDIR:-/tmp}/spectre-check.XXXXXXXX.log")"
+PORT=4400 build/erlang-shipment/entrypoint.sh run > "$spectre_check_log" 2>&1 &
 spectre_check_pid=$!
-trap 'kill "$spectre_check_pid" 2>/dev/null || true; wait "$spectre_check_pid" 2>/dev/null || true' EXIT
+trap 'kill "$spectre_check_pid" 2>/dev/null || true; wait "$spectre_check_pid" 2>/dev/null || true; rm -f -- "$spectre_check_log"' EXIT
 spectre_check_ready=0
 for _ in {1..30}; do
-  if ! kill -0 "$spectre_check_pid" 2>/dev/null; then cat /tmp/spectre-check.log; exit 1; fi
+  if ! kill -0 "$spectre_check_pid" 2>/dev/null; then cat "$spectre_check_log"; exit 1; fi
   if curl -fsS --max-time 2 http://127.0.0.1:4400/healthz >/dev/null 2>&1; then spectre_check_ready=1; break; fi
   sleep 0.5
 done
-if (( ! spectre_check_ready )); then cat /tmp/spectre-check.log; exit 1; fi
+if (( ! spectre_check_ready )); then cat "$spectre_check_log"; exit 1; fi
 BASE_URL=http://127.0.0.1:4400 python3 scripts/seo_smoke.py
 BASE_URL=http://127.0.0.1:4400 python3 scripts/http_smoke.py
 BASE_URL=http://127.0.0.1:4400 python3 scripts/feature_smoke.py
 BASE_URL=http://127.0.0.1:4400 npm run test:browser
 BASE_URL=http://127.0.0.1:4400 npm run test:features
+BASE_URL=http://127.0.0.1:4400 node scripts/browser_lifecycle.mjs

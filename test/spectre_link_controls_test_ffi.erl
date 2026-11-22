@@ -1,0 +1,57 @@
+-module(spectre_link_controls_test_ffi).
+-export([owner_controls/0]).
+
+owner_controls() ->
+    {ok, Hub} = spectre_link_hub:start_link(),
+    Client = binary:copy(<<"a">>, 48),
+    Call = fun(Method, Path, Room, Access, Owner, Token, Data) ->
+        {Code, Raw} = spectre_link_hub:request(Hub, Method, Path, Room, Access, Owner,
+            Token, <<"controls-unit">>, <<"-1">>, <<>>, iolist_to_binary(json:encode(Data))),
+        {Code, json:decode(Raw)}
+    end,
+    {201, Created} = Call(<<"POST">>, [<<"api">>, <<"rooms">>], <<"lobby">>, <<>>, <<>>, Client,
+                          #{name => <<"Workshop">>, private => true}),
+    Room = maps:get(<<"id">>, maps:get(<<"room">>, Created)),
+    Access = maps:get(<<"access_key">>, Created), Owner = maps:get(<<"owner_key">>, Created),
+    Settings = #{name => <<"Questions">>, topic => <<"Ask the host">>,
+                 posting_mode => <<"questions">>, slow_mode_seconds => 5},
+    Edit = fun(A, O, D) -> Call(<<"POST">>, [<<"api">>, <<"room">>], Room, A, O, Client, D) end,
+    {403, _} = Edit(<<>>, Owner, Settings),
+    {403, _} = Edit(Access, <<>>, Settings),
+    {403, _} = Edit(Access, binary:copy(<<"b">>, 48), Settings),
+    {200, Updated} = Edit(Access, Owner, Settings),
+    <<"Ask the host">> = maps:get(<<"topic">>, Updated),
+    5 = maps:get(<<"slow_mode_seconds">>, Updated),
+    {400, _} = Edit(Access, Owner, Settings#{slow_mode_seconds := 1}),
+    {400, _} = Edit(Access, Owner, Settings#{posting_mode := <<"anything">>}),
+    {400, _} = Edit(Access, Owner, Settings#{name := <<>>}),
+    {403, _} = Call(<<"POST">>, [<<"api">>, <<"room">>], <<"lobby">>, <<>>, Owner, Client, Settings),
+    Send = fun(Kind, Token, O) -> Call(<<"POST">>, [<<"api">>, <<"messages">>], Room, Access, O, Token,
+                             #{room => Room, content => <<"A question?">>, kind => Kind, ttl => 300000}) end,
+    {403, _} = Send(<<"thought">>, Client, <<>>),
+    {400, _} = Send(<<"question">>, <<>>, <<>>),
+    {201, _} = Send(<<"question">>, Client, <<>>),
+    {429, Limited} = Send(<<"question">>, Client, <<>>),
+    Retry = maps:get(<<"retry_after">>, Limited), true = Retry >= 1 andalso Retry =< 5,
+    {201, _} = Send(<<"question">>, binary:copy(<<"c">>, 48), <<>>),
+    {201, _} = Send(<<"thought">>, Client, Owner),
+    % Cooldown state is independently swept, without another API request.
+    sys:replace_state(Hub, fun(S) -> S#{cooldowns := maps:map(fun(_, _) -> erlang:monotonic_time(millisecond) - 1 end,
+                                                           maps:get(cooldowns, S))} end),
+    timer:sleep(650),
+    0 = map_size(maps:get(cooldowns, sys:get_state(Hub))),
+    % Exhausted global state must fail closed without allocating another entry.
+    sys:replace_state(Hub, fun(S) -> S#{cooldowns := maps:from_list([{{<<"other">>, I}, erlang:monotonic_time(millisecond) + 30000}
+                                                                  || I <- lists:seq(1, 1000)])} end),
+    {503, _} = Send(<<"question">>, Client, <<>>),
+    1000 = map_size(maps:get(cooldowns, sys:get_state(Hub))),
+    sys:replace_state(Hub, fun(S) -> S#{cooldowns := #{}} end),
+    {200, _} = Edit(Access, Owner, Settings#{posting_mode := <<"paused">>}),
+    {403, _} = Send(<<"question">>, Client, <<>>),
+    {201, _} = Send(<<"thought">>, Client, Owner),
+    {200, _} = Edit(Access, Owner, Settings#{posting_mode := <<"open">>}),
+    {201, _} = Send(<<"thought">>, Client, <<>>),
+    {200, _} = Call(<<"DELETE">>, [<<"api">>, <<"room">>], Room, Access, Owner, Client, #{}),
+    false = lists:any(fun({Rm, _}) -> Rm =:= Room end, maps:keys(maps:get(cooldowns, sys:get_state(Hub)))),
+    gen_server:stop(Hub),
+    nil.

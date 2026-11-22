@@ -64,6 +64,7 @@ init([]) ->
        sessions => #{},
        waiters => #{},
        reports => #{},
+       cooldowns => #{},
        versions => #{},
        moderator => Mod}}.
 handle_call({api, Q}, From, Old) ->
@@ -74,6 +75,8 @@ handle_call({api, Q}, From, Old) ->
         {Code, Data, Next} ->
             {reply, response(Code, Data), notify(Next)}
     catch
+        throw:{http, Code, Message, Retry} ->
+            {reply, response(Code, #{error => Message, retry_after => Retry}), S};
         throw:{http, Code, Message} ->
             {reply, response(Code, #{error => Message}), S};
         _:_ ->
@@ -161,6 +164,8 @@ dispatch(#{method := <<"POST">>,
           reader => digest(Reader),
           creator => digest(Client),
           creator_address => Address,
+          posting_mode => <<"open">>,
+          slow_mode_seconds => 0,
           deadline => mono() + Minutes * 60000,
           expires_at => now() + Minutes * 60000},
     Next = bump(Id, S#{rooms := maps:put(Id, R, maps:get(rooms, S))}),
@@ -243,6 +248,28 @@ room_dispatch(#{method := <<"GET">>, path := [<<"api">>, <<"room">>]} =
                   Q,
               _, R, S) ->
     {200, room_view(R, S, Q), S};
+room_dispatch(#{method := <<"POST">>,
+                path := [<<"api">>, <<"room">>],
+                data := D} = Q,
+              _, R, S) ->
+    ensure(managed(maps:get(id, R)) andalso is_owner(R, Q),
+           403, <<"Room owner capability required.">>),
+    Name = text(D, <<"name">>, 1, 48),
+    Topic = optional_text(D, <<"topic">>, 120),
+    Mode = maps:get(<<"posting_mode">>, D, <<"open">>),
+    Slow = maps:get(<<"slow_mode_seconds">>, D, 0),
+    ensure(lists:member(Mode, [<<"open">>, <<"questions">>, <<"paused">>]),
+           400, <<"Choose open, questions or paused posting.">>),
+    ensure(lists:member(Slow, [0, 5, 15, 30]),
+           400, <<"Choose a 0, 5, 15 or 30 second slow mode.">>),
+    Updated = R#{name := Name, topic := Topic, posting_mode := Mode,
+                 slow_mode_seconds := Slow},
+    Room = maps:get(id, R),
+    % Clear old cooldowns when changing policy; a fresh policy starts now.
+    Next = bump(Room, S#{rooms := maps:put(Room, Updated, maps:get(rooms, S)),
+                          cooldowns := maps:filter(fun({Rm, _}, _) -> Rm =/= Room end,
+                                                    maps:get(cooldowns, S))}),
+    {200, room_view(Updated, Next, Q), Next};
 room_dispatch(#{method := <<"DELETE">>,
                 path := [<<"api">>, <<"room">>],
                 room := Room} =
@@ -257,7 +284,7 @@ room_dispatch(#{method := <<"DELETE">>,
 room_dispatch(#{method := <<"POST">>,
                 path := [<<"api">>, <<"messages">>],
                 data := D,
-                room := Room},
+                room := Room} = Q,
               _, R, S) ->
     Messages = maps:get(messages, S),
     ensure(map_size(Messages) < 500
@@ -357,6 +384,7 @@ room_dispatch(#{method := <<"POST">>,
     ActualTTL = Expires - WallCreated,
     ensure(ActualTTL > 0, 410, <<"This conversation has ended.">>),
     Author = optional_text(D, <<"author">>, 24),
+    CooldownKey = posting_policy(R, Q, Kind, Parent, S),
     Id = random(),
     Key = random(),
     {ok, Pid} = spectre_link_message:start_link(self(), Id, Deadline),
@@ -376,7 +404,12 @@ room_dispatch(#{method := <<"POST">>,
           expires_at => Expires,
           deadline => Deadline,
           pid => Pid},
-    Next = bump(Room, S#{messages := maps:put(Id, M, Messages)}),
+    Cooldowns = case CooldownKey of
+        none -> maps:get(cooldowns, S);
+        _ -> maps:put(CooldownKey, MonoCreated + maps:get(slow_mode_seconds, R) * 1000,
+                      maps:get(cooldowns, S))
+    end,
+    Next = bump(Room, S#{messages := maps:put(Id, M, Messages), cooldowns := Cooldowns}),
     {201,
      #{id => Id, burn_key => Key, message => public_message(M)},
      Next};
@@ -622,6 +655,8 @@ default_room(Id) ->
       private => false,
       encrypted => false,
       discoverable => lists:member(Id, builtin()),
+      posting_mode => <<"open">>,
+      slow_mode_seconds => 0,
       owner => <<>>,
       reader => <<>>,
       deadline => mono() + 86400000,
@@ -652,7 +687,7 @@ moderator(R, Q, S) ->
     maps:get(mod, Q) =:= maps:get(moderator, S).
 room_view(R, S, Q) ->
     Id = maps:get(id, R),
-    (maps:with([id, name, topic, private, encrypted, discoverable,
+    (maps:with([id, name, topic, private, encrypted, discoverable, posting_mode, slow_mode_seconds,
                 expires_at],
                R))#{active => length(room_messages(Id, S)),
                     sessions => maps:get(count, presence(Id, S)),
@@ -757,7 +792,9 @@ clean(S) ->
              maps:get(deadline, V) =< Now
         ],
     S3 =
-        S2#{sessions :=
+        S2#{cooldowns := maps:filter(fun(_, Deadline) -> Deadline > Now end,
+                                    maps:get(cooldowns, S2)),
+            sessions :=
                 maps:filter(fun(_, V) ->
                                    maps:get(deadline, V) > Now
                             end,
@@ -772,6 +809,8 @@ close_room(Room, S) ->
     S1 = remove_messages(Ids, S),
     bump(Room,
          S1#{rooms := maps:remove(Room, maps:get(rooms, S1)),
+             cooldowns := maps:filter(fun({Rm, _}, _) -> Rm =/= Room end,
+                                     maps:get(cooldowns, S1)),
              sessions :=
                  maps:filter(fun({Rm, _}, _) ->
                                     Rm =/= Room
@@ -855,6 +894,31 @@ notify(S) ->
                     ]),
     S#{waiters := Waiters,
        versions := maps:with(Live, maps:get(versions, S))}.
+posting_policy(R, Q, Kind, Parent, S) ->
+    case moderator(R, Q, S) of
+        true -> none;
+        false ->
+            Mode = maps:get(posting_mode, R),
+            ensure(Mode =/= <<"paused">>, 403, <<"The host has paused new messages.">>),
+            ensure(Mode =/= <<"questions">> orelse Kind =:= <<"question">> orelse Parent =/= <<>>,
+                   403, <<"This room accepts questions and replies only.">>),
+            case maps:get(slow_mode_seconds, R) of
+                0 -> none;
+                _ ->
+                    Key = {maps:get(id, R), digest(client(Q))},
+                    Cooldowns = maps:get(cooldowns, S),
+                    Now = mono(),
+                    Left = maps:get(Key, Cooldowns, Now) - Now,
+                    case Left > 0 of
+                        true -> throw({http, 429, <<"Slow mode is active. Wait before posting again.">>,
+                                       (Left + 999) div 1000});
+                        false -> ok
+                    end,
+                    ensure(map_size(Cooldowns) < 1000 orelse maps:is_key(Key, Cooldowns),
+                           503, <<"Posting capacity reached. Try again shortly.">>),
+                    Key
+            end
+    end.
 client(Q) ->
     C = maps:get(client, Q),
     ensure(spectre_link_ffi:valid_token(C),

@@ -105,6 +105,7 @@ if (( ! spectre_ready )); then printf 'Isolated release did not become healthy.\
 BASE_URL=http://127.0.0.1:4402 python3 scripts/seo_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/http_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/feature_smoke.py
+BASE_URL=http://127.0.0.1:4402 python3 scripts/controls_smoke.py
 curl -fsS --max-time 5 http://127.0.0.1:4402/ >/dev/null
 cleanup_preview
 sudo -n install -d -m 0700 "$spectre_backup_dir"

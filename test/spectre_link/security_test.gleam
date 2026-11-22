@@ -120,3 +120,10 @@ pub fn otp_diagnostics_redact_content_and_capabilities_test() {
 
 @external(erlang, "spectre_link_test_ffi", "diagnostic_redaction")
 fn diagnostic_redaction() -> Nil
+
+pub fn owner_controls_are_authorized_and_bounded_test() {
+  owner_controls() |> should.equal(Nil)
+}
+
+@external(erlang, "spectre_link_controls_test_ffi", "owner_controls")
+fn owner_controls() -> Nil

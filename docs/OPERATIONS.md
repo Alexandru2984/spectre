@@ -57,3 +57,9 @@ Encrypted private rooms use native Web Crypto AES-256-GCM, a fresh random 96-bit
 ## Localized public pages and SEO release
 
 The latest activation evidence and current release/backup paths are in SEO-RELEASE.md. FEATURE-RELEASE.md records the feature rollout; RELEASE-REPORT.md preserves 2.0 history. Public locale URLs are explicit and do not rely on Accept-Language or cookies. If English templates or translation declarations change, regenerate Romanian HTML using `node scripts/build-locales.mjs` before committing; release checks reject stale generated files. Source and generated HTML contain public product information only. Scoped gzip excludes message JSON; room query URLs in either language remain noindex.
+
+## Owner posting policies
+
+`POST /api/room?room=:id` replaces the name, topic and posting policy of an active managed event. It requires that room's owner capability and, for private rooms, its read capability. The global moderator capability cannot change another owner's event settings. Settings cannot change privacy, encryption, event expiry or discovery. Metadata, including the topic, is processed by the server even in encrypted rooms; do not put secrets in it.
+
+Posting modes are `open`, `questions` (top-level questions and replies), and `paused`. Room moderators can post in any mode. Slow mode accepts 0/5/15/30 seconds and limits new posts/replies per anonymous page token. It does not identify people or stop a determined client rotating tokens; existing IP/global rate and capacity limits still apply. Rejected posts do not allocate message actors or consume cooldown entries. Up to 1000 cooldown entries are retained globally; they expire in at most 30 seconds, are independently swept and are removed when their event ends. Policy changes clear that event's cooldowns. A slow-mode 429 supplies an accurate bounded Retry-After and JSON retry_after value. Live revision notifications announce policy changes to connected participants.

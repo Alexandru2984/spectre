@@ -57,6 +57,7 @@ All message reads are scoped to a room; private rooms require X-Room-Key, and om
 | POST | `/api/rooms` | `name`, `topic`, `minutes` (15/30/60), `private`, `encrypted`, `discoverable` → room, owner_key, access_key |
 | GET | `/api/rooms` | Built-ins and opted-in public events; never private/unlisted rooms |
 | GET / DELETE | `/api/room?room=:id` | Room metadata / owner-only closure |
+| POST | `/api/room?room=:id` | Owner-only settings: `name`, `topic`, `posting_mode` (open/questions/paused), `slow_mode_seconds` (0/5/15/30) |
 | GET | `/api/events?room=:id&since=:revision` | Immediate change notification, bounded hold ≤20s |
 | POST / GET / DELETE | `/api/presence?room=:id` | Heartbeat with optional alias / counts and aliases / leave |
 | POST | `/api/messages/:id/vote?room=:id` | `{"option":0}` with X-Spectre-Client; one mutable choice per page token |

@@ -1,10 +1,12 @@
 import gleam/bit_array
 import gleam/bytes_tree
+import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/http.{Get, Head, Post} as gleam_http
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/result
 import gleam/string
@@ -137,7 +139,13 @@ fn route_api(
     json_resp(code, json)
     |> fn(res) {
       case code {
-        429 -> response.set_header(res, "retry-after", "10")
+        429 -> {
+          let retry =
+            json.parse(json, decode.at(["retry_after"], decode.int))
+            |> result.unwrap(10)
+            |> int.clamp(1, 30)
+          response.set_header(res, "retry-after", int.to_string(retry))
+        }
         503 -> response.set_header(res, "retry-after", "5")
         _ -> res
       }

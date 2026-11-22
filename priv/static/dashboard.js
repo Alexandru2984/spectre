@@ -72,10 +72,36 @@
     $('#connection').dataset.state = status;
     $('#connection-text').textContent = text;
   }
+  const dialogVersions = new WeakMap();
+  function dialogVersion(dialog) { return dialogVersions.get(dialog) || 0; }
+  function clearDialog(dialog) {
+    dialogVersions.set(dialog, dialogVersion(dialog) + 1);
+    switch (dialog.id) {
+      case 'message-dialog': state.selectedId = null; $('#message-detail').replaceChildren(); break;
+      case 'share-dialog': {
+        $('#share-url').value = '';
+        const qr = $('#share-qr'); qr.getContext('2d')?.clearRect(0, 0, qr.width, qr.height); break;
+      }
+      case 'moderator-dialog':
+        state.reportRequest++; $('#moderator-key').value = ''; $('#moderator-feedback').textContent = ''; $('#moderator-reports').replaceChildren(); break;
+      case 'report-dialog': state.reportId = null; $('#report-reason').selectedIndex = 0; break;
+      case 'burn-dialog': state.burnId = null; break;
+      case 'room-settings-dialog':
+        $('#settings-name').value = ''; $('#settings-topic').value = ''; $('#settings-feedback').textContent = ''; break;
+      case 'presentation-dialog': clearPresentation(); break;
+    }
+  }
+  function closeDialog(target) {
+    const dialog = typeof target === 'string' ? $(target) : target;
+    clearDialog(dialog); dialog.close();
+  }
+  function currentDialog(dialog, version, generation) {
+    return dialog.open && dialogVersion(dialog) === version && state.generation === generation && !state.locked;
+  }
   function showDialog(id) {
     const dialog = $(id);
     $('#room-tools').open = false;
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) { dialogVersions.set(dialog, dialogVersion(dialog) + 1); dialog.showModal(); }
   }
   function setTheme(theme) {
     document.documentElement.dataset.theme = theme;
@@ -115,13 +141,17 @@
   });
   $$('#help-btn, #mobile-help-btn, #privacy-btn').forEach(button => button.addEventListener('click', () => showDialog('#help-dialog')));
   $('#shortcuts-btn').addEventListener('click', () => showDialog('#shortcuts-dialog'));
-  $$('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
-  $$('dialog').forEach(dialog => dialog.addEventListener('click', event => {
-    if (event.target !== dialog) return;
-    const rect = dialog.getBoundingClientRect();
-    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
-  }));
-  $('#message-dialog').addEventListener('close', () => { state.selectedId = null; $('#message-detail').replaceChildren(); });
+  $$('[data-close]').forEach(button => button.addEventListener('click', () => closeDialog(button.closest('dialog'))));
+  $$('dialog').forEach(dialog => {
+    dialog.addEventListener('click', event => {
+      if (event.target !== dialog) return;
+      const rect = dialog.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeDialog(dialog);
+    });
+    dialog.addEventListener('cancel', () => clearDialog(dialog));
+    // A native close event can arrive after the same dialog has been reopened.
+    dialog.addEventListener('close', () => { if (!dialog.open) clearDialog(dialog); });
+  });
   $('#new-room-btn').addEventListener('click', () => { $('#room-input').value = ''; showDialog('#room-dialog'); });
   $('#room-form').addEventListener('submit', createRoom);
   $('.sidebar').addEventListener('click', event => {
@@ -163,7 +193,7 @@
     $('#content-input').value = '';
     updateCharacterCount();
     feedback('');
-    $$('dialog[open]').forEach(dialog => dialog.close());
+    $$('dialog[open]').forEach(closeDialog);
     state.burnId = null;
     const custom = $('#custom-room-link');
     custom.hidden = Object.hasOwn(knownRooms, room);
@@ -449,6 +479,7 @@
     $('#empty-action').firstChild.textContent = state.hidden.size && state.filter === 'all' && !$('#search-input').value ? 'Show hidden messages' : noMatch ? 'Clear filters' : 'Write a message';
     $('#feed').hidden = state.view !== 'feed' || !messages.length;
     $('#constellation-panel').hidden = state.view !== 'constellation' || !messages.length;
+    if ($('#constellation-panel').hidden) clearConstellation();
     const thread = state.selectedId ? state.messages.filter(message => message.id === state.selectedId || message.parent_id === state.selectedId) : null;
     const signature = JSON.stringify([state.view, messages, thread, [...state.pending], [...state.myReactions], [...state.burnKeys.keys()], [...state.myPollVotes], Boolean(state.roomMeta?.can_moderate), state.roomMeta?.spotlight_id]);
     if (signature !== state.signature) {
@@ -488,15 +519,16 @@
   $('#confirm-burn').addEventListener('click', async () => {
     const id = state.burnId;
     const capability = state.burnKeys.get(id);
-    if (!capability) { $('#burn-dialog').close(); toast('That message has already gone.'); return; }
-    const generation = state.generation;
+    if (!capability) { closeDialog('#burn-dialog'); toast('That message has already gone.'); return; }
+    const generation = state.generation, dialog = $('#burn-dialog'), version = dialogVersion(dialog);
     $('#confirm-burn').disabled = true;
     try {
       await api(apiPath('/' + encodeURIComponent(id)), { method: 'DELETE', headers: { 'x-burn-key': capability.key }, signal: AbortSignal.timeout(10000) });
       state.burnKeys.delete(id);
       if (generation === state.generation) { removeLocalMessage(id); render(); }
-      $('#burn-dialog').close(); toast('Message deleted.');
-    } catch (error) { toast(error.status ? error.message : 'Couldn’t confirm the burn. Please try again.'); }
+      if (currentDialog(dialog, version, generation)) closeDialog(dialog);
+      if (generation === state.generation && !state.locked) toast('Message deleted.');
+    } catch (error) { if (currentDialog(dialog, version, generation)) toast(error.status ? error.message : 'Couldn’t confirm the burn. Please try again.'); }
     finally { $('#confirm-burn').disabled = false; }
   });
   function tickCards() {
@@ -516,7 +548,7 @@
     if (!state.selectedId) return;
     const message = state.messages.find(item => item.id === state.selectedId && timeLeft(item) > 0);
     if (!message) {
-      if ($('#message-dialog').open) { $('#message-dialog').close(); toast('This message has expired or was removed.'); }
+      if ($('#message-dialog').open) { closeDialog('#message-dialog'); toast('This message has expired or was removed.'); }
       state.selectedId = null; $('#message-detail').replaceChildren();
     } else {
       const focused = document.activeElement?.dataset?.focusKey;
@@ -553,6 +585,10 @@
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     }
     state.canvasWidth = rect.width; state.canvasHeight = rect.height;
+  }
+  function clearConstellation() {
+    stopAnimation(); state.hits = []; $('#signal-index').replaceChildren();
+    if (ctx) { ctx.save(); ctx.resetTransform(); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.restore(); }
   }
   function drawCanvas(timestamp = performance.now()) {
     if (!ctx || state.view !== 'constellation' || $('#constellation-panel').hidden) return;
@@ -665,7 +701,6 @@
     copyText(url, state.roomMeta?.private ? 'Private invitation copied. Share it carefully.' : 'Room link copied.');
     showDialog('#share-dialog');
   }
-  $('#share-dialog').addEventListener('close', () => { $('#share-url').value = ''; const canvas = $('#share-qr'); canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); });
   $('#copy-invite').addEventListener('click', () => copyText(inviteUrl(), 'Invitation copied.'));
   $('#room-private').addEventListener('change', () => { if ($('#room-private').checked) $('#room-discoverable').checked = false; else $('#room-encrypted').checked = false; });
   $('#room-encrypted').addEventListener('change', () => { if ($('#room-encrypted').checked) { $('#room-private').checked = true; $('#room-discoverable').checked = false; } });
@@ -678,7 +713,7 @@
       const key = encrypted ? await SpectreCrypto.generate() : '';
       const { data } = await api('/api/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#room-input').value.trim(), topic: $('#room-topic-input').value.trim(), minutes: Number($('#room-duration').value), private: $('#room-private').checked, encrypted, discoverable: $('#room-discoverable').checked }), signal: AbortSignal.timeout(10000) });
       state.capabilities.set(data.room.id, { access: data.access_key, owner: data.owner_key, key });
-      $('#room-dialog').close(); changeRoom(data.room.id, true);
+      closeDialog('#room-dialog'); changeRoom(data.room.id, true);
       toast('Your event is open. Save the invitation and owner key before reloading.');
     } catch (error) { $('#room-create-error').textContent = error.message; }
     finally { button.disabled = false; }
@@ -691,7 +726,7 @@
     if (!parent || timeLeft(parent) <= 0) { toast('That conversation has ended.'); return; }
     state.replyTo = parent.id; $('#reply-preview').textContent = parent.content.slice(0, 120); $('#reply-context').hidden = false;
     updatePostingControls();
-    $('#message-dialog').close(); $('#content-input').focus(); $('#content-input').scrollIntoView({ block: 'center', behavior: 'auto' });
+    closeDialog('#message-dialog'); $('#content-input').focus(); $('#content-input').scrollIntoView({ block: 'center', behavior: 'auto' });
   }
   function repliesTo(id) { return state.messages.filter(message => message.parent_id === id && timeLeft(message) > 0 && !state.hidden.has(message.id) && !state.hidden.has(id)).sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)); }
   function addMessageFeatures(card, message, detail = false, presentation = false) {
@@ -728,7 +763,7 @@
     action('Reply', () => replyTo(message));
     const children = repliesTo(message.id);
     if (!message.parent_id && !detail) action(children.length ? 'Thread (' + children.length + ')' : 'Open thread', () => openMessage(message.id));
-    action('Hide', () => { state.hidden.set(message.id, message.expires_at); if ($('#message-dialog').open) $('#message-dialog').close(); render(); });
+    action('Hide', () => { state.hidden.set(message.id, message.expires_at); if ($('#message-dialog').open) closeDialog('#message-dialog'); render(); });
     action('Report', () => { state.reportId = message.id; showDialog('#report-dialog'); });
     if (state.roomMeta?.can_moderate && !state.burnKeys.has(message.id)) action('Remove', () => removeAsModerator(message.id));
     const canManage = state.burnKeys.has(message.id) || state.roomMeta?.can_moderate;
@@ -749,8 +784,13 @@
   }
   $('#submit-report').addEventListener('click', async () => {
     const button = $('#submit-report'); if (button.disabled) return; button.disabled = true;
-    try { await api(apiPath('/' + state.reportId + '/report'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: $('#report-reason').value }), signal: AbortSignal.timeout(10000) }); $('#report-dialog').close(); toast('Report submitted. It expires with the message.'); }
-    catch (error) { toast(error.message); } finally { button.disabled = false; }
+    const id = state.reportId, generation = state.generation, dialog = $('#report-dialog'), version = dialogVersion(dialog);
+    try {
+      if (!id) return;
+      await api(apiPath('/' + id + '/report'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: $('#report-reason').value }), signal: AbortSignal.timeout(10000) });
+      if (currentDialog(dialog, version, generation)) { closeDialog(dialog); toast('Report submitted. It expires with the message.'); }
+    } catch (error) { if (currentDialog(dialog, version, generation)) toast(error.message); }
+    finally { button.disabled = false; }
   });
   $('#moderate-btn').addEventListener('click', () => { $('#moderator-key').value = ''; $('#moderator-feedback').textContent = ''; $('#moderator-reports').replaceChildren(); showDialog('#moderator-dialog'); if (state.roomMeta?.can_moderate) loadReports(); });
   $('#load-reports').addEventListener('click', () => {
@@ -759,19 +799,14 @@
     loadReports();
   });
   $('#copy-owner-key').addEventListener('click', () => { const key = capabilities().owner; if (key) copyText(key, 'Owner key copied. Keep it private; it can moderate or close your room.'); else toast('No owner key is available in this tab.'); });
-  $('#moderator-dialog').addEventListener('close', () => {
-    state.reportRequest++;
-    $('#moderator-key').value = ''; $('#moderator-feedback').textContent = ''; $('#moderator-reports').replaceChildren();
-  });
-  $('#report-dialog').addEventListener('close', () => { state.reportId = null; });
   function pruneSecondaryViews() {
     const active = new Set(state.messages.filter(message => timeLeft(message) > 0).map(message => message.id));
     $$('#moderator-reports .moderation-report').forEach(node => {
       if (!active.has(node.dataset.messageId) || Number(node.dataset.expiresAt) <= now()) node.remove();
     });
     if (state.replyTo && !active.has(state.replyTo)) cancelReply();
-    if (state.reportId && !active.has(state.reportId)) $('#report-dialog').close();
-    if (state.burnId && !active.has(state.burnId)) { state.burnId = null; $('#burn-dialog').close(); }
+    if (state.reportId && !active.has(state.reportId)) closeDialog('#report-dialog');
+    if (state.burnId && !active.has(state.burnId)) { state.burnId = null; closeDialog('#burn-dialog'); }
   }
   function removeLocalMessage(id) {
     state.messages = state.messages.filter(message => message.id !== id && message.parent_id !== id);
@@ -800,7 +835,7 @@
   }
   $('#close-room-btn').addEventListener('click', () => showDialog('#close-room-dialog'));
   $('#confirm-close-room').addEventListener('click', async () => {
-    try { await api(roomPath('room'), { method: 'DELETE', signal: AbortSignal.timeout(10000) }); $('#close-room-dialog').close(); lockRoom('This event has ended. Its messages and sessions have been removed.'); }
+    try { await api(roomPath('room'), { method: 'DELETE', signal: AbortSignal.timeout(10000) }); closeDialog('#close-room-dialog'); lockRoom('This event has ended. Its messages and sessions have been removed.'); }
     catch (error) { toast(error.message); }
   });
   function lockRoom(message) {
@@ -810,7 +845,7 @@
     state.drafts.delete(state.room); state.recentRooms.delete(state.room); state.cooldowns.delete(state.room); state.capabilities.delete(state.room); state.aliases.delete(state.room);
     state.locked = true; state.blocked = true; state.messages = []; state.roomMeta = null; cancelReply(); state.watchController?.abort(); state.controller?.abort();
     clearPresentation();
-    $$('dialog[open]').forEach(dialog => dialog.close());
+    $$('dialog[open]').forEach(closeDialog);
     $('#participants-list').replaceChildren(); $('#alias-input').value = ''; $('#poll-options').value = ''; $('#content-input').value = ''; updateCharacterCount();
     $('#search-input').value = ''; $('#content-input').disabled = true; $('#poll-options').disabled = true;
     clearTimeout(state.timer); clearTimeout(state.presenceTimer); clearTimeout(state.watchRetry);
@@ -859,7 +894,7 @@
     if (generation === state.generation) state.presenceTimer = setTimeout(heartbeat, 20000);
   }
   $('#people-btn').addEventListener('click', () => { $('#alias-input').value = state.alias; showDialog('#people-dialog'); });
-  $('#save-alias').addEventListener('click', async () => { state.alias = $('#alias-input').value.trim(); state.aliases.set(state.room,state.alias); await heartbeat(); await syncRoom(); $('#people-dialog').close(); toast('Temporary alias updated.'); });
+  $('#save-alias').addEventListener('click', async () => { state.alias = $('#alias-input').value.trim(); state.aliases.set(state.room,state.alias); await heartbeat(); await syncRoom(); closeDialog('#people-dialog'); toast('Temporary alias updated.'); });
   $('#discover-btn').addEventListener('click', async () => {
     showDialog('#discover-dialog'); $('#discovery-list').replaceChildren(element('p', '', 'Loading rooms…'));
     try {
@@ -869,7 +904,7 @@
         const name = element('strong', '', knownRooms[room.id] || room.name); if (!knownRooms[room.id]) name.dataset.untranslated = '';
         const topic = element('p', '', room.topic || 'Messages, replies and polls.'); if (room.topic) topic.dataset.untranslated = '';
         button.append(name, topic, element('small', '', room.active + ' messages · ' + room.sessions + ' active sessions'));
-        button.addEventListener('click', () => { $('#discover-dialog').close(); changeRoom(room.id, true); }); return button;
+        button.addEventListener('click', () => { closeDialog('#discover-dialog'); changeRoom(room.id, true); }); return button;
       }));
     } catch (error) { $('#discovery-list').replaceChildren(element('p', '', error.message)); }
   });
@@ -995,7 +1030,7 @@
   }
   function showPresentation() {
     if (state.locked) return;
-    $('#message-dialog').close();
+    closeDialog('#message-dialog');
     state.presentationFilter = 'all'; $('#presentation-filter').value = 'all';
     state.presentationId = spotlightMessage()?.id || ''; state.presentationSignature = '';
     showDialog('#presentation-dialog'); renderPresentation();
@@ -1021,8 +1056,6 @@
     $('#presentation-message').removeAttribute('aria-describedby');
     $('#presentation-room').textContent = ''; $('#presentation-position').textContent = ''; $('#presentation-clock').textContent = '';
   }
-  $('#presentation-dialog').addEventListener('close', () => { if (!$('#presentation-dialog').open) clearPresentation(); });
-  $('#presentation-dialog').addEventListener('cancel', clearPresentation);
   $('#presentation-dialog').addEventListener('keydown', event => {
     if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.target.closest('input,select,textarea,[contenteditable]')) return;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); movePresentation(event.key === 'ArrowLeft' ? -1 : 1); }
@@ -1097,15 +1130,16 @@
     $('#settings-mode').value = meta.posting_mode || 'open'; $('#settings-slow').value = String(meta.slow_mode_seconds || 0);
     $('#settings-feedback').textContent = ''; showDialog('#room-settings-dialog');
   });
-  $('#room-settings-dialog').addEventListener('close', () => { $('#settings-name').value = ''; $('#settings-topic').value = ''; $('#settings-feedback').textContent = ''; });
   $('#room-settings-form').addEventListener('submit', async event => {
     event.preventDefault(); const button = $('#room-settings-form button[type=submit]'); if (button.disabled) return;
-    button.disabled = true; const generation = state.generation;
+    button.disabled = true;
+    const generation = state.generation, dialog = $('#room-settings-dialog'), version = dialogVersion(dialog);
     try {
       const { data } = await api(roomPath('room'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#settings-name').value.trim(), topic: $('#settings-topic').value.trim(), posting_mode: $('#settings-mode').value, slow_mode_seconds: Number($('#settings-slow').value) }), signal: AbortSignal.timeout(10000) });
       if (generation !== state.generation || state.locked) return;
-      updateRoomMeta(data, state.people); $('#room-settings-dialog').close(); toast('Room settings updated.');
-    } catch (error) { if (generation === state.generation && $('#room-settings-dialog').open) $('#settings-feedback').textContent = error.message; }
+      updateRoomMeta(data, state.people);
+      if (currentDialog(dialog, version, generation)) { closeDialog(dialog); toast('Room settings updated.'); }
+    } catch (error) { if (currentDialog(dialog, version, generation)) $('#settings-feedback').textContent = error.message; }
     finally { button.disabled = false; }
   });
   const templates = {

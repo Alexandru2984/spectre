@@ -1,4 +1,4 @@
-# Spectre 3.3 · Spectre-Link
+# Spectre 3.4 · Spectre-Link
 
 A public space for fleeting thoughts, built with Gleam and Erlang/OTP. Try it at **https://spectre.micutu.com**.
 
@@ -47,7 +47,7 @@ npx playwright install chromium
 ./scripts/check.sh
 ```
 
-Use `npx playwright install --with-deps chromium` on a fresh Linux CI machine. Port 4400 must be free. The check script builds a shipment and tests that exact release with Gleam unit tests, HTTP regressions, browser flows and automated axe WCAG A/AA checks. Browser screenshots go to ignored `test-results/`. Automated checks do not replace a full manual accessibility audit or an independent pentest.
+Use `npx playwright install --with-deps chromium` on a fresh Linux CI machine. Port 4400 must be free. The check script builds a shipment and tests that exact release with Gleam unit tests, HTTP regressions, browser flows and automated axe WCAG A/AA checks. Browser screenshots go to ignored `test-results/`. The reading/lifecycle journey also covers stale native dialog events, delayed mutations, canvas cleanup, room-scoped undo and draft-preserving reading controls. Automated checks do not replace a full manual accessibility audit or an independent pentest.
 
 ## API
 

@@ -2,7 +2,7 @@
 
 ## Build and run
 
-The current 3.3 interface release and activation evidence are in [DESIGN-RELEASE.md](DESIGN-RELEASE.md). The preceding session-tool/workspace releases and earlier reports remain historical records. Advanced UI controls are under Room tools; server-side owner/moderator authorization is unchanged.
+The 3.4 reading/lifecycle release is described in [READING-RELEASE.md](READING-RELEASE.md), with activation evidence recorded after its gate completes. The preceding 3.3 interface release is in [DESIGN-RELEASE.md](DESIGN-RELEASE.md). The preceding session-tool/workspace releases and earlier reports remain historical records. Advanced UI controls are under Room tools; server-side owner/moderator authorization is unchanged.
 
 Requires Gleam 1.16+, Erlang/OTP 27+, and Rebar3 3.26. Node 24 and Python 3 are only needed for development checks. Runtime needs Erlang, not Gleam, Node, npm, or Rebar3. Versions under test are recorded in the release report.
 

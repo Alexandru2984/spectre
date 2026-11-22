@@ -7,7 +7,8 @@
     "test:features": "node scripts/browser_features.mjs",
     "test:lifecycle": "node scripts/browser_lifecycle.mjs",
     "test:product": "node scripts/browser_product.mjs",
-    "test:sessions": "node scripts/browser_sessions.mjs"
+    "test:sessions": "node scripts/browser_sessions.mjs",
+    "test:reading": "node scripts/browser_reading.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

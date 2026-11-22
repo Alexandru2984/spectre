@@ -1,5 +1,5 @@
 name = "spectre_link"
-version = "3.3.0"
+version = "3.4.0"
 gleam = ">= 1.16.0"
 target = "erlang"
 

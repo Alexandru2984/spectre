@@ -56,3 +56,7 @@ The original follow-on proposals for private invitations, optional content encry
 ## SEO follow-on completed
 
 After the feature rollout, the separate SEO stage added six server-rendered EN/RO public pages, self-canonical/reciprocal language alternatives, accurate social/structured metadata, public-only sitemap and scoped static compression. SEO-RELEASE.md records tests and activation. Search Console/indexing and field performance observations remain external measurement work rather than claimed results.
+
+## Reading and lifecycle follow-on
+
+The 3.4 scope in READING-PLAN.md adds real reading layout, draft-preserving writing entry points and room-scoped undo/restore. It hardens native dialog cleanup, stale mutation responses, event-closure navigation and inactive constellation cleanup. READING-RELEASE.md records targeted and shipment/rollout observations separately. Both local CI and the isolated deployment preview exercise the new reading journey alongside the five existing browser suites; remote CI requires a pushed revision.

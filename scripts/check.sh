@@ -33,3 +33,4 @@ BASE_URL=http://127.0.0.1:4400 npm run test:browser
 BASE_URL=http://127.0.0.1:4400 npm run test:features
 BASE_URL=http://127.0.0.1:4400 node scripts/browser_lifecycle.mjs
 BASE_URL=http://127.0.0.1:4400 node scripts/browser_product.mjs
+BASE_URL=http://127.0.0.1:4400 node scripts/browser_sessions.mjs

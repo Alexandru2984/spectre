@@ -2,7 +2,7 @@
 
 ## Build and run
 
-The current 3.1 workspace release and activation evidence are in [WORKSPACE-RELEASE.md](WORKSPACE-RELEASE.md). The earlier release reports remain historical records.
+The current 3.2 session-tool release and activation evidence are in [SESSION-TOOLS-RELEASE.md](SESSION-TOOLS-RELEASE.md). The preceding workspace release and earlier reports remain historical records.
 
 Requires Gleam 1.16+, Erlang/OTP 27+, and Rebar3 3.26. Node 24 and Python 3 are only needed for development checks. Runtime needs Erlang, not Gleam, Node, npm, or Rebar3. Versions under test are recorded in the release report.
 

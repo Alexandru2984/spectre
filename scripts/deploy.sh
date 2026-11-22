@@ -109,10 +109,12 @@ BASE_URL=http://127.0.0.1:4402 python3 scripts/seo_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/http_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/feature_smoke.py
 BASE_URL=http://127.0.0.1:4402 python3 scripts/controls_smoke.py
+BASE_URL=http://127.0.0.1:4402 python3 scripts/session_smoke.py
 BASE_URL=http://127.0.0.1:4402 node scripts/browser_smoke.mjs
 BASE_URL=http://127.0.0.1:4402 node scripts/browser_features.mjs
 BASE_URL=http://127.0.0.1:4402 node scripts/browser_lifecycle.mjs
 BASE_URL=http://127.0.0.1:4402 node scripts/browser_product.mjs
+BASE_URL=http://127.0.0.1:4402 node scripts/browser_sessions.mjs
 curl -fsS --max-time 5 http://127.0.0.1:4402/ >/dev/null
 cleanup_preview
 sudo -n install -d -m 0700 "$spectre_backup_dir"

@@ -1,4 +1,4 @@
-# Spectre 3.1 · Spectre-Link
+# Spectre 3.2 · Spectre-Link
 
 A public space for fleeting thoughts, built with Gleam and Erlang/OTP. Try it at **https://spectre.micutu.com**.
 
@@ -13,7 +13,8 @@ Share a thought, idea or question in a public room. Choose a lifetime, react whi
 - Three reactions, mutable anonymous poll selections, creator burn, local hide/restore, reason-based reports and capability-protected moderation.
 - Bounded live revision notifications, snapshot fallback, optional room aliases, session presence, event timers and daily prompts.
 - Local QR invitations, feed/constellation/search/filter/sort, full RO/EN controls/help/errors/information pages, mobile layout, themes, keyboard support and reduced motion.
-- Complete chronological thread views, unanswered-question filtering, sorting by replies, search through aliases/poll choices and conversation focus mode.
+- Complete chronological thread views, explicit question resolution and unresolved-question filtering, sorting by replies, search through aliases/poll choices and conversation focus mode.
+- Live room spotlight, creator/moderator poll closure and reopening with server-enforced vote freezing, visual vote bars and a read-only presentation with keyboard navigation. Spotlight and status never extend message lifetime; metadata remains server-visible.
 - Up to 12 room drafts held only in page memory, recent-room navigation and a responsive workspace with a mobile compose shortcut. Reloading loses drafts; managed-event expiry/closure clears its draft.
 - Strict CSP, local assets, bounded OTP memory, origin/framing validation, independent expiry and dedicated read-only production identity.
 
@@ -87,3 +88,5 @@ Browser → Cloudflare → nginx → loopback Mist HTTP server
 The coordinator and rate limiter are linked to the application entry process. The coordinator serializes read authorization, mutations and expiry; OTP status/termination diagnostics redact content, capabilities and queued request details. Encrypted content is decrypted only by the browser. Critical actors are linked to the application entry process. A critical failure exits the instance; systemd restarts an empty instance rather than persisting message content. Expiry uses monotonic deadlines on the server; public timestamps use wall-clock time. No claim of durable delivery, distributed replication or automatic hot upgrades is made.
 
 [Operations and rollback](docs/OPERATIONS.md) · [Audit](docs/SECURITY-AUDIT.md) · [Roadmap](docs/ROADMAP.md). Run `./scripts/deploy.sh` only on the configured VPS from a clean committed checkout. It tests a root-owned release under a dedicated systemd identity before switching this application's service/vhost. Restarts clear all live content.
+
+Current iteration: [session tools plan](docs/SESSION-TOOLS-PLAN.md) and [release evidence](docs/SESSION-TOOLS-RELEASE.md). The unresolved filter tracks explicit creator/moderator resolution, rather than treating any reply as a verified answer. Presentation follows the same live/paused connection and room authorization as the feed; it creates no separate public URL or persistent export.

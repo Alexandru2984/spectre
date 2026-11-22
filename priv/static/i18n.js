@@ -133,6 +133,12 @@
     "This poll is closed. Its results are final until reopened.": "Acest sondaj este închis. Rezultatele rămân fixe până la redeschidere."
 });
   Object.assign(ro, {'Presented message':'Mesajul prezentat','Offline · messages still expire':'Offline · mesajele expiră în continuare'});
+  Object.assign(ro, {
+    "Facilitate a live session.": "Coordonează o sesiune live.",
+    "Spotlight one message for the room, mark questions resolved and close or reopen poll voting. Use a read-only presentation with keyboard navigation. Highlighting a message never extends its lifetime.": "Evidențiază un mesaj pentru cameră, marchează întrebările ca rezolvate și închide sau redeschide votarea sondajelor. Folosește prezentarea doar pentru citire, cu navigare din tastatură. Evidențierea nu prelungește niciodată durata unui mesaj.",
+    "Live session metadata and presentation": "Metadatele sesiunii și prezentarea",
+    "Resolved questions, closed polls and spotlight choices are server-visible metadata, even when text is encrypted. Creators and authorized room moderators control question and poll status; only room moderators choose the spotlight. Presentation follows the same room access and live-update state. Expired and locally hidden messages are removed from it; received removal or closure updates and room navigation also clear its content.": "Întrebările rezolvate, sondajele închise și mesajele evidențiate sunt metadate vizibile serverului, chiar dacă textul este criptat. Creatorii și moderatorii autorizați controlează starea întrebărilor și sondajelor; doar moderatorii camerei aleg mesajul evidențiat. Prezentarea respectă același acces și aceeași stare a actualizărilor live. Mesajele expirate și cele ascunse local sunt eliminate din ea; actualizările primite despre ștergere sau închidere și schimbarea camerei îi curăță conținutul."
+});
   const originals = new WeakMap(), attributes = new WeakMap();
   const explicitRomanian = /^\/ro(?:\/|$)/.test(location.pathname);
   let language = explicitRomanian ? 'ro' : 'en';

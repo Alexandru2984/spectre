@@ -29,12 +29,26 @@ The full `scripts/check.sh` run passed against a compiled 3.2.0 shipment on isol
 - Deterministic delayed-decoding regressions preserve offline status after disconnection and terminal room closure after late responses. Existing draft, room, QR, moderation and private-key flows continue passing.
 - Six-page static SEO/localization checks, JavaScript syntax, Gleam formatting, ShellCheck and the vendored QR comparison. npm audit reported no advisories; OSV reported no matches for the 13 locked Hex packages. Negative database lookups do not certify security.
 
-Local ignored screenshots include `test-results/session-presentation-desktop.png` and `test-results/session-presentation-mobile.png`. Remote GitHub CI has not been run or claimed; no push is part of this iteration.
+Local ignored screenshots include `test-results/session-presentation-desktop.png` and `test-results/session-presentation-mobile.png`. A later read-only GitHub lookup confirmed [Release checks run 45039376332](https://github.com/Alexandru2984/spectre/actions/runs/45039376332) completed successfully for final runtime commit `383a25d93ad0f89774e07b1f8933c3634afa7989`. The release job and all steps, including full checks and screenshot upload, succeeded. No Git push was issued by this workflow; the remote/tracking branch was already synchronized when work resumed.
 
 A follow-up landscape check found that a 568×320 viewport squeezed the presentation reading container to 24px. Patch 3.2.1 uses a single scrolling dialog at short heights, preserving the message area and reachable controls. The full session browser suite then passed with explicit 568×320 and 844×390 checks, in addition to portrait widths. The final patch is subject to the same complete isolated-shipment deployment gate below.
 
-Production activation is recorded after the isolated systemd preview gate succeeds. The active predecessor at the start of this iteration was `/opt/spectre-link/releases/cd35aa0bbf25-20261122T131459Z`. Restarts clear all ephemeral state; the deployment path retains the previous release and restricted configuration backup for rollback.
+The final 3.2.1 shipment is active through the preview-gated deployment path:
+
+- Runtime source: `383a25d93ad0` (subsequent documentation commits do not change runtime files).
+- Active release: `/opt/spectre-link/releases/383a25d93ad0-20261122T134957Z`; its application metadata reports version 3.2.1.
+- Restricted configuration backup: `/var/backups/spectre-link/383a25d93ad0-20261122T134957Z`.
+- Immediate predecessor: `/opt/spectre-link/releases/e59ee1849aaf-20261122T134552Z`, version 3.2.0 with the landscape limitation noted above. The earlier 3.1 release `/opt/spectre-link/releases/cd35aa0bbf25-20261122T131459Z` is also retained. Follow OPERATIONS.md to choose and restore a suitable release/configuration pair.
+- Observed production state: active as `spectre-link:spectre-link`, zero automatic restarts and about 47 MiB current memory. Only `127.0.0.1:4000` listens for this app; temporary 4400/4402 and former distribution 9100 have no listeners. nginx configuration validation passed.
+
+Public curl checks through Cloudflare/nginx passed for all six EN/RO pages, with security headers and no observed analytics/challenge injection. The public dashboard.js, dashboard.css and i18n.js hashes match the committed files; a Romanian room query retains noindex.
+
+The final public two-browser journey used a new private encrypted event. It verified fragment invitation handling and ciphertext-only poll transport, shared spotlight, creator resolution, poll freeze and server-side 409 rejection of a stale vote, read-only Romanian presentation, 568×320 landscape readability, mobile axe checks and event-closure cleanup. No JavaScript/CSP errors were observed. The test event was closed; existing user conversations were not inspected. Its screenshot is `test-results/production-session-mobile.png`.
+
+An initial unpaced public journey hit the existing nginx `spectre_read_v2` burst limit (429) and timed out before the client retry interval; both message creations had succeeded, and that test event was closed during cleanup. The final journey used realistic action spacing and allowed the documented retry interval. Protection limits were not weakened. Shared-IP bursts can still delay updates, as described by the existing rate-limit/NAT boundary.
+
+Restarts clear ephemeral state; no content backup/database migration was created. No other application unit was restarted and no Cloudflare/DNS/tunnel setting or external notification destination was changed.
 
 ## Remaining work
 
-External alert delivery and Search Console need an operator-owned destination/account. An independent penetration/cryptographic assessment, host-wide audit, field performance measurements and actual search-indexing observations remain separate work. Anonymous tokens, bearer-link forwarding and participant-made copies retain their documented limits. Remote GitHub CI is not claimed without a push.
+External alert delivery and Search Console need an operator-owned destination/account. An independent penetration/cryptographic assessment, host-wide audit, field performance measurements and actual search-indexing observations remain separate work. Anonymous tokens, bearer-link forwarding, shared-IP rate limits and participant-made copies retain their documented limits.

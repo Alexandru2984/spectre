@@ -29,3 +29,7 @@ Unit/HTTP: correct/missing/wrong-room keys, private-read requirement even with a
 Browser: two participants see spotlight/status/poll transitions; complete encrypted messages remain encrypted on transport; stale UI cannot vote in a closed poll; explicit resolve/reopen drives the unresolved filter. Presentation offers previous/next, filters, direct spotlight access, useful empty states and keyboard operation. Expiry/burn/hide/closure remove every presentation/spotlight copy. Check 320–1440px, both themes, EN/RO and automated axe checks. Existing product/lifecycle suites must continue passing with the intentionally updated filter semantics.
 
 No persistent accounts/history, uploads, remote notifications, analytics vendor, operator alert destination or Cloudflare/DNS setting is introduced. External alert delivery and Search Console still require the operator's destination/account; they do not block this product stage.
+
+## Completion
+
+The 3.2.1 session-tool shipment is active at https://spectre.micutu.com. SESSION-TOOLS-RELEASE.md records the 12 unit tests, 175 HTTP checks, five browser suites, landscape follow-up, public encrypted-session verification, successful remote GitHub run and exact active/backup/rollback paths. The release retains existing privacy and abuse-control limits; operator-owned alert/Search Console setup remains separate work.

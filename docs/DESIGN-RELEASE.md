@@ -20,4 +20,16 @@ Ignored review artifacts under `test-results/`: `design-before-desktop.png`, `de
 
 ## Publication
 
-The compiled-shipment verification, active release, rollback paths and public checks are recorded here after the existing isolated systemd deployment gate completes. The preceding session-tool release is documented in SESSION-TOOLS-RELEASE.md. No Git push is implied; commit attribution remains the owner's existing identity without co-author trailers.
+The exact compiled 3.3.0 shipment passed the existing isolated systemd deployment gate before activation: 12 unit tests, 175 HTTP checks, all five browser suites, six-page SEO/localization checks, JavaScript syntax, Gleam formatting, npm/Hex advisory lookups and the vendored QR check. The browser journeys cover both themes, RO/EN, encryption, drafts, room/creator/moderator controls, presentation, closure/expiry, mobile/landscape and automated axe checks. nginx validation passed before reload.
+
+- Runtime source: `46fcdfed473a` (later documentation commits do not change runtime files).
+- Active shipment: `/opt/spectre-link/releases/46fcdfed473a-20261122T181607Z`.
+- Restricted configuration backup: `/var/backups/spectre-link/46fcdfed473a-20261122T181607Z`.
+- Previous release/rollback target: `/opt/spectre-link/releases/383a25d93ad0-20261122T134957Z`, version 3.2.1. Follow OPERATIONS.md for rollback; restarting clears ephemeral state.
+- Observed service: active, zero automatic restarts and about 45 MiB current memory. Only the app's loopback 4000 listener remains; temporary 4400/4402 are released.
+
+Public checks through Cloudflare/nginx passed for all six EN/RO pages. Public dashboard.js, dashboard.css, i18n.js, icons.svg and social.png hashes match the committed assets; a Romanian room query retains noindex. No observed analytics/challenge injection or CSP relaxation was introduced.
+
+A public browser check created a new private encrypted event and verified the direct room heading, encrypted message submission, closed-by-default prompts, disclosed room tools, presentation and Romanian/light mobile accessibility without horizontal overflow or JavaScript/CSP errors. The owned test event was closed and no existing public conversations were inspected. Actual public captures are `test-results/production-design-desktop.png` and `test-results/production-design-mobile.png`.
+
+The preceding session-tool release is documented in SESSION-TOOLS-RELEASE.md. No Git push or new remote-CI claim is part of this design iteration; commit attribution remains the owner's existing identity without co-author trailers. No skill/package installation or changes to server authorization, persistence, Cloudflare/DNS/tunnels or external notification services were required.

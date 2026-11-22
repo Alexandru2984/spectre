@@ -127,3 +127,17 @@ pub fn owner_controls_are_authorized_and_bounded_test() {
 
 @external(erlang, "spectre_link_controls_test_ffi", "owner_controls")
 fn owner_controls() -> Nil
+
+pub fn session_tools_respect_room_and_creator_capabilities_test() {
+  session_authorization() |> should.equal(Nil)
+}
+
+@external(erlang, "spectre_link_session_test_ffi", "session_authorization")
+fn session_authorization() -> Nil
+
+pub fn spotlight_expires_without_read_traffic_test() {
+  spotlight_expiry() |> should.equal(Nil)
+}
+
+@external(erlang, "spectre_link_session_test_ffi", "spotlight_expiry")
+fn spotlight_expiry() -> Nil

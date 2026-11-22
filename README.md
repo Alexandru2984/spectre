@@ -61,6 +61,9 @@ All message reads are scoped to a room; private rooms require X-Room-Key, and om
 | GET | `/api/rooms` | Built-ins and opted-in public events; never private/unlisted rooms |
 | GET / DELETE | `/api/room?room=:id` | Room metadata / owner-only closure |
 | POST | `/api/room?room=:id` | Owner-only settings: `name`, `topic`, `posting_mode` (open/questions/paused), `slow_mode_seconds` (0/5/15/30) |
+| POST | `/api/spotlight?room=:id` | Room moderator-only `message_id`: live main message or empty string to clear; never extends message expiry |
+| POST | `/api/messages/:id/resolve?room=:id` | Creator burn key or room moderator: `resolved` boolean for a main question |
+| POST | `/api/messages/:id/poll-state?room=:id` | Creator burn key or room moderator: `closed` boolean; closed polls reject votes with 409 |
 | GET | `/api/events?room=:id&since=:revision` | Immediate change notification, bounded hold ≤20s |
 | POST / GET / DELETE | `/api/presence?room=:id` | Heartbeat with optional alias / counts and aliases / leave |
 | POST | `/api/messages/:id/vote?room=:id` | `{"option":0}` with X-Spectre-Client; one mutable choice per page token |

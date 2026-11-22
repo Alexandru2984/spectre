@@ -65,6 +65,7 @@ init([]) ->
        waiters => #{},
        reports => #{},
        cooldowns => #{},
+       spotlights => #{},
        versions => #{},
        moderator => Mod}}.
 handle_call({api, Q}, From, Old) ->
@@ -249,6 +250,27 @@ room_dispatch(#{method := <<"GET">>, path := [<<"api">>, <<"room">>]} =
               _, R, S) ->
     {200, room_view(R, S, Q), S};
 room_dispatch(#{method := <<"POST">>,
+                path := [<<"api">>, <<"spotlight">>],
+                room := Room, data := D} = Q,
+              _, R, S) ->
+    ensure(moderator(R, Q, S), 403, <<"Moderator capability required.">>),
+    Id = maps:get(<<"message_id">>, D, none),
+    ensure(is_binary(Id), 400, <<"Expected a message_id string.">>),
+    Pins = maps:get(spotlights, S),
+    NextPins = case Id of
+        <<>> -> maps:remove(Room, Pins);
+        _ ->
+            M = message(Id, Room, S),
+            ensure(maps:get(parent_id, M) =:= <<>>,
+                   400, <<"Spotlight a main message, not a reply.">>),
+            maps:put(Room, Id, Pins)
+    end,
+    Next = case NextPins =:= Pins of
+        true -> S;
+        false -> bump(Room, S#{spotlights := NextPins})
+    end,
+    {200, room_view(R, Next, Q), Next};
+room_dispatch(#{method := <<"POST">>,
                 path := [<<"api">>, <<"room">>],
                 data := D} = Q,
               _, R, S) ->
@@ -398,6 +420,8 @@ room_dispatch(#{method := <<"POST">>,
           options => Options,
           poll_votes => #{},
           votes => #{},
+          resolved => false,
+          poll_closed => false,
           burn => digest(Key),
           created_at => WallCreated,
           ttl_ms => ActualTTL,
@@ -415,19 +439,31 @@ room_dispatch(#{method := <<"POST">>,
      Next};
 room_dispatch(#{method := <<"DELETE">>,
                 path := [<<"api">>, <<"messages">>, Id],
-                room := Room,
-                mod := Mod} =
+                room := Room} =
                   Q,
               _, R, S) ->
     M = message(Id, Room, S),
-    Burn = maps:get(burn, Q, <<>>),
-    ensure(Burn =:= maps:get(burn, M)
-           orelse
-           moderator(R, Q, S),
+    ensure(can_manage(M, R, Q, S),
            404,
            <<"Message or burn capability not found.">>),
-    _ = Mod,
     {200, #{status => <<"burned">>}, remove_messages([Id], S)};
+room_dispatch(#{method := <<"POST">>,
+                path := [<<"api">>, <<"messages">>, Id, <<"resolve">>],
+                room := Room, data := D} = Q,
+              _, R, S) ->
+    M = message(Id, Room, S),
+    ensure(can_manage(M, R, Q, S), 404, <<"Message or burn capability not found.">>),
+    ensure(maps:get(kind, M) =:= <<"question">> andalso maps:get(parent_id, M) =:= <<>>,
+           400, <<"Only a main question can be resolved.">>),
+    message_flag(M, resolved, boolean(D, <<"resolved">>, none), S);
+room_dispatch(#{method := <<"POST">>,
+                path := [<<"api">>, <<"messages">>, Id, <<"poll-state">>],
+                room := Room, data := D} = Q,
+              _, R, S) ->
+    M = message(Id, Room, S),
+    ensure(can_manage(M, R, Q, S), 404, <<"Message or burn capability not found.">>),
+    ensure(maps:get(kind, M) =:= <<"poll">>, 400, <<"This message is not a poll.">>),
+    message_flag(M, poll_closed, boolean(D, <<"closed">>, none), S);
 room_dispatch(#{method := <<"POST">>,
                 path := [<<"api">>, <<"messages">>, Id, <<"reactions">>],
                 room := Room,
@@ -466,6 +502,7 @@ room_dispatch(#{method := <<"POST">>,
     ensure(maps:get(kind, M) =:= <<"poll">>,
            400,
            <<"This message is not a poll.">>),
+    ensure(not maps:get(poll_closed, M), 409, <<"This poll is closed. Its results are final until reopened.">>),
     Index = maps:get(<<"option">>, D, -1),
     ensure(is_integer(Index)
            andalso
@@ -685,6 +722,8 @@ moderator(R, Q, S) ->
     maps:get(moderator, S) =/= <<>>
     andalso
     maps:get(mod, Q) =:= maps:get(moderator, S).
+can_manage(M, R, Q, S) ->
+    maps:get(burn, Q) =:= maps:get(burn, M) orelse moderator(R, Q, S).
 room_view(R, S, Q) ->
     Id = maps:get(id, R),
     (maps:with([id, name, topic, private, encrypted, discoverable, posting_mode, slow_mode_seconds,
@@ -694,6 +733,7 @@ room_view(R, S, Q) ->
                     room_limit => 100,
                     max_ttl_ms => 300000,
                     revision => version(Id, S),
+                    spotlight_id => maps:get(Id, maps:get(spotlights, S), <<>>),
                     can_moderate => moderator(R, Q, S),
                     is_owner => is_owner(R, Q)}.
 room_messages(Room, S) ->
@@ -714,7 +754,7 @@ message(Id, Room, S) ->
 public_message(M) ->
     Base =
         maps:with([id, room, kind, content, parent_id, author,
-                   encrypted, created_at, expires_at, ttl_ms, options],
+                   encrypted, created_at, expires_at, ttl_ms, options, resolved, poll_closed],
                   M),
     Votes = maps:get(poll_votes, M),
     N = length(maps:get(options, M)),
@@ -737,6 +777,10 @@ put_message(M, S) ->
     bump(maps:get(room, M),
          S#{messages :=
                 maps:put(maps:get(id, M), M, maps:get(messages, S))}).
+message_flag(M, Field, Value, S) ->
+    Updated = maps:put(Field, Value, M),
+    Next = case Updated =:= M of true -> S; false -> put_message(Updated, S) end,
+    {200, public_message(Updated), Next}.
 counts(Items) ->
     lists:foldl(fun(K, A) ->
                        maps:update_with(K,
@@ -809,6 +853,7 @@ close_room(Room, S) ->
     S1 = remove_messages(Ids, S),
     bump(Room,
          S1#{rooms := maps:remove(Room, maps:get(rooms, S1)),
+             spotlights := maps:remove(Room, maps:get(spotlights, S1)),
              cooldowns := maps:filter(fun({Rm, _}, _) -> Rm =/= Room end,
                                      maps:get(cooldowns, S1)),
              sessions :=
@@ -840,6 +885,8 @@ remove_messages(Ids, S) ->
     ],
     S1 =
         S#{messages := maps:without(All, Messages),
+           spotlights := maps:filter(fun(_, Id) -> not lists:member(Id, All) end,
+                                     maps:get(spotlights, S)),
            reports := maps:without(All, maps:get(reports, S))},
     lists:foldl(fun bump/2, S1, Rooms).
 notify(S) ->

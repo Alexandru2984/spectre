@@ -28,6 +28,7 @@ BASE_URL=http://127.0.0.1:4400 python3 scripts/seo_smoke.py
 BASE_URL=http://127.0.0.1:4400 python3 scripts/http_smoke.py
 BASE_URL=http://127.0.0.1:4400 python3 scripts/feature_smoke.py
 BASE_URL=http://127.0.0.1:4400 python3 scripts/controls_smoke.py
+BASE_URL=http://127.0.0.1:4400 python3 scripts/session_smoke.py
 BASE_URL=http://127.0.0.1:4400 npm run test:browser
 BASE_URL=http://127.0.0.1:4400 npm run test:features
 BASE_URL=http://127.0.0.1:4400 node scripts/browser_lifecycle.mjs

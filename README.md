@@ -1,4 +1,4 @@
-# Spectre 3.2 · Spectre-Link
+# Spectre 3.2.1 · Spectre-Link
 
 A public space for fleeting thoughts, built with Gleam and Erlang/OTP. Try it at **https://spectre.micutu.com**.
 

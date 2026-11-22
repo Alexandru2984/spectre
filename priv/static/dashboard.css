@@ -502,3 +502,11 @@ select.dialog-input { padding-right: 36px; }
   #presentation-clock:empty { display: none; }
   .presentation-empty { font-size: 20px; }
 }
+@media (max-height: 500px) {
+  /* A short landscape viewport uses one scrollable dialog instead of squeezing
+     the reading area between non-shrinking header/footer controls. */
+  .presentation-dialog[open] { display: block; overflow-y: auto; }
+  .presentation-message { height: auto; min-height: 180px; overflow: visible; }
+  .presentation-empty { min-height: 180px; margin: 24px auto; }
+  .presentation-footer { margin-top: 20px; }
+}

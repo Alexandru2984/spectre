@@ -31,6 +31,8 @@ The full `scripts/check.sh` run passed against a compiled 3.2.0 shipment on isol
 
 Local ignored screenshots include `test-results/session-presentation-desktop.png` and `test-results/session-presentation-mobile.png`. Remote GitHub CI has not been run or claimed; no push is part of this iteration.
 
+A follow-up landscape check found that a 568×320 viewport squeezed the presentation reading container to 24px. Patch 3.2.1 uses a single scrolling dialog at short heights, preserving the message area and reachable controls. The full session browser suite then passed with explicit 568×320 and 844×390 checks, in addition to portrait widths. The final patch is subject to the same complete isolated-shipment deployment gate below.
+
 Production activation is recorded after the isolated systemd preview gate succeeds. The active predecessor at the start of this iteration was `/opt/spectre-link/releases/cd35aa0bbf25-20261122T131459Z`. Restarts clear all ephemeral state; the deployment path retains the previous release and restricted configuration backup for rollback.
 
 ## Remaining work

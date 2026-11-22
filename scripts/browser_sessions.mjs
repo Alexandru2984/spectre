@@ -107,7 +107,15 @@ try {
     assert.equal(await q.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'No page overflow at ' + width);
     assert.equal(await q.locator('#presentation-dialog').evaluate(node => node.scrollWidth > node.clientWidth), false, 'No dialog overflow at ' + width);
   }
+  for (const [width, height] of [[568, 320], [844, 390]]) {
+    await q.setViewportSize({ width, height });
+    assert.equal(await q.locator('#presentation-dialog').evaluate(node => node.scrollWidth > node.clientWidth), false, 'No landscape overflow');
+    assert(await q.locator('#presentation-message').evaluate(node => node.getBoundingClientRect().height >= 180), 'Landscape preserves a readable message area');
+    await q.locator('#presentation-spotlight').scrollIntoViewIfNeeded();
+    assert(await q.locator('#presentation-spotlight').isVisible(), 'Landscape navigation remains reachable');
+  }
   await q.setViewportSize({ width: 390, height: 844 });
+  await q.locator('#presentation-dialog').evaluate(node => { node.scrollTop = 0; });
   await q.locator('#presentation-filter').selectOption('poll');
   await q.locator('#presentation-position').filter({ hasText: '1 din 1' }).waitFor();
   await axe(q, 'Romanian dark mobile presentation');
